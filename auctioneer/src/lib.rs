@@ -10,6 +10,9 @@ use llm_types::openai::{
     ChatParams, ChatRequest, LLMRequest, LLMResponse, Message as OpenaiMessage,
 };
 
+mod prompts;
+use prompts::create_prompt;
+
 wit_bindgen::generate!({
     path: "wit",
     world: "process",
@@ -74,14 +77,14 @@ fn handle_message(
                                 }
                                 _ => {
                                     let msg = OpenaiMessage {
-                                        content: text,
+                                        content: create_prompt(&text),
                                         role: "user".into(),
                                     };
 
                                     let chat_params = ChatParams {
                                         model: "gpt-3.5-turbo".into(),
                                         messages: vec![msg],
-                                        max_tokens: Some(20),
+                                        max_tokens: Some(2001),
                                         temperature: Some(1.25),
                                         ..Default::default()
                                     };
