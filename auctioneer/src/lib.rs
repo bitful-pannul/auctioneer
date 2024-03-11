@@ -1,10 +1,17 @@
+use kinode_process_lib::{await_message, call_init, println, Address, Message};
+
 use frankenstein::{
     ChatId, SendMessageParams, TelegramApi,
     UpdateContent::{ChatJoinRequest, Message as TgMessage},
 };
-use kinode_process_lib::{await_message, call_init, println, Address, Message};
+
 mod tg_api;
 use tg_api::{init_tg_bot, Api, TgResponse};
+
+mod llm_types;
+use llm_types::openai::{
+    ChatParams, ChatRequest, LLMRequest, LLMResponse, Message as OpenaiMessage,
+};
 
 wit_bindgen::generate!({
     path: "wit",
