@@ -1,5 +1,8 @@
+use std::collections::HashMap;
+
 use kinode_process_lib::{await_message, call_init, println, Address, Message, ProcessId, Request};
 
+use alloy_signer::LocalWallet;
 use frankenstein::{ChatId, SendMessageParams, TelegramApi, UpdateContent::Message as TgMessage};
 
 mod tg_api;
@@ -12,6 +15,15 @@ use llm_types::openai::{
 
 mod prompts;
 use prompts::create_prompt;
+
+/// context held: chat_id -> history
+type ChatContexts = HashMap<i64, Vec<String>>;
+
+/// offerings: (nft_address, nft_id) -> (rules prompt, min_price)
+type Offerings = HashMap<(Address, u64), (String, u64)>;
+
+/// sold offerings
+type Sold = HashMap<(Address, u64), u64>;
 
 wit_bindgen::generate!({
     path: "wit",
@@ -26,6 +38,10 @@ fn handle_message(
     api: &Api,
     worker: &Address,
     openai_key: &str,
+    _wallet: &LocalWallet,
+    _chats: &mut ChatContexts,
+    _offerings: &mut Offerings,
+    _sold: &mut Sold,
 ) -> anyhow::Result<()> {
     let message = await_message()?;
 
@@ -84,7 +100,7 @@ fn handle_message(
                                     let chat_params = ChatParams {
                                         model: "gpt-3.5-turbo".into(),
                                         messages: vec![msg],
-                                        max_tokens: Some(2001),
+                                        max_tokens: Some(200),
                                         temperature: Some(1.25),
                                         ..Default::default()
                                     };
@@ -130,21 +146,36 @@ fn handle_message(
 
 call_init!(init);
 
+/// on startup, the auctioneer will need a tg token, open_ai token, and a private key holding the NFTs.
 fn init(our: Address) {
     println!("auctioneer: give me a tg token!");
 
-    let message = await_message().unwrap();
-    let token_str = String::from_utf8(message.body().to_vec()).unwrap_or_else(|_| "".to_string());
-
+    let msg = await_message().unwrap();
+    let token_str = String::from_utf8(msg.body().to_vec()).expect("failed to parse tg token");
     let (api, worker) = init_tg_bot(our.clone(), &token_str, None).unwrap();
 
     println!("auctioneer: give me an openai key!");
+    let msg = await_message().unwrap();
+    let openai_key = String::from_utf8(msg.body().to_vec()).expect("failed to parse open_ai key");
 
-    let message = await_message().unwrap();
-    let openai_key = String::from_utf8(message.body().to_vec()).unwrap_or_else(|_| "".to_string());
+    let msg: Message = await_message().unwrap();
+    let wallet = LocalWallet::from_slice(msg.body()).expect("failed to parse private key");
+
+    let mut chats: ChatContexts = HashMap::new();
+    let mut offerings: Offerings = HashMap::new();
+    let mut sold: Sold = HashMap::new();
 
     loop {
-        match handle_message(&our, &api, &worker, &openai_key) {
+        match handle_message(
+            &our,
+            &api,
+            &worker,
+            &openai_key,
+            &wallet,
+            &mut chats,
+            &mut offerings,
+            &mut sold,
+        ) {
             Ok(()) => {}
             Err(e) => {
                 println!("auctioneer: error: {:?}", e);
