@@ -1,9 +1,6 @@
-use kinode_process_lib::{await_message, call_init, println, Address, Message};
+use kinode_process_lib::{await_message, call_init, println, Address, Message, ProcessId, Request};
 
-use frankenstein::{
-    ChatId, SendMessageParams, TelegramApi,
-    UpdateContent::{ChatJoinRequest, Message as TgMessage},
-};
+use frankenstein::{ChatId, SendMessageParams, TelegramApi, UpdateContent::Message as TgMessage};
 
 mod tg_api;
 use tg_api::{init_tg_bot, Api, TgResponse};
@@ -71,26 +68,48 @@ fn handle_message(
                             };
 
                             match text.as_str() {
-                                "/hello" => {
-                                    params.text = "good morning!".to_string();
-                                    api.send_message(&params)?;
-                                }
-                                "/goodbye" => {
-                                    params.text = "it's over for u".to_string();
-                                    api.send_message(&params)?;
-                                }
-                                "/wen???" => {
-                                    params.text = "soon™".to_string();
+                                "/start" => {
+                                    params.text = "I'm an auctioneer acting for X, I can tell u about what I have for sale currently.".to_string();
                                     api.send_message(&params)?;
                                 }
                                 _ => {
-                                    params.text = "me no undersand".to_string();
-                                    api.send_message(&params)?;
+                                    let msg = OpenaiMessage {
+                                        content: text,
+                                        role: "user".into(),
+                                    };
+
+                                    let chat_params = ChatParams {
+                                        model: "gpt-3.5-turbo".into(),
+                                        messages: vec![msg],
+                                        max_tokens: Some(20),
+                                        temperature: Some(1.25),
+                                        ..Default::default()
+                                    };
+                                    let chat_request = ChatRequest {
+                                        params: chat_params,
+                                        api_key: openai_key.to_string(),
+                                    };
+                                    let request = LLMRequest::Chat(chat_request);
+                                    let msg = Request::new()
+                                        .target(Address::new(
+                                            "our",
+                                            ProcessId::new(Some("openai"), "llm", "kinode"),
+                                        ))
+                                        .body(request.to_bytes())
+                                        .send_and_await_response(10)??;
+
+                                    let response = LLMResponse::parse(msg.body())?;
+                                    if let LLMResponse::Chat(chat) = response {
+                                        let completion = chat.to_chat_response();
+                                        params.text = completion;
+                                        api.send_message(&params)?;
+                                    } else {
+                                        return Err(anyhow::Error::msg(
+                                            "Error querying OpenAI: wrong result",
+                                        ));
+                                    }
                                 }
                             }
-                        }
-                        ChatJoinRequest(req) => {
-                            println!("got chat join request from: {:?}", req.from);
                         }
                         _ => {
                             println!("got unhandled tg update: {:?}", update);
