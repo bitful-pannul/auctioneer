@@ -16,6 +16,9 @@ use llm_types::openai::{
 mod prompts;
 use prompts::create_prompt;
 
+mod llm_api;
+use llm_api::*;
+
 /// context held: chat_id -> history
 type ChatContexts = HashMap<i64, Vec<String>>;
 
@@ -38,7 +41,7 @@ fn handle_message(
     api: &Api,
     worker: &Address,
     openai_key: &str,
-    _wallet: &LocalWallet,
+    // _wallet: &LocalWallet,
     _chats: &mut ChatContexts,
     _offerings: &mut Offerings,
     _sold: &mut Sold,
@@ -151,15 +154,17 @@ fn init(our: Address) {
     println!("auctioneer: give me a tg token!");
 
     let msg = await_message().unwrap();
+    println!("Message resceived");
     let token_str = String::from_utf8(msg.body().to_vec()).expect("failed to parse tg token");
+    println!("got tg token: {:?}", token_str);
     let (api, worker) = init_tg_bot(our.clone(), &token_str, None).unwrap();
 
     println!("auctioneer: give me an openai key!");
     let msg = await_message().unwrap();
     let openai_key = String::from_utf8(msg.body().to_vec()).expect("failed to parse open_ai key");
 
-    let msg: Message = await_message().unwrap();
-    let wallet = LocalWallet::from_slice(msg.body()).expect("failed to parse private key");
+    // let msg: Message = await_message().unwrap();
+    // let wallet = LocalWallet::from_slice(msg.body()).expect("failed to parse private key");
 
     let mut chats: ChatContexts = HashMap::new();
     let mut offerings: Offerings = HashMap::new();
@@ -171,7 +176,7 @@ fn init(our: Address) {
             &api,
             &worker,
             &openai_key,
-            &wallet,
+            // &wallet,
             &mut chats,
             &mut offerings,
             &mut sold,
