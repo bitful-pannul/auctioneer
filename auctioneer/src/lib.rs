@@ -9,15 +9,10 @@ mod tg_api;
 use tg_api::{init_tg_bot, Api, TgResponse};
 
 mod llm_types;
-use llm_types::openai::{
-    ChatParams, ChatRequest, LLMRequest, LLMResponse, Message as OpenaiMessage,
-};
-
 mod prompts;
-use prompts::create_prompt;
 
 mod llm_api;
-use llm_api::init_openai_pkg;
+use llm_api::{init_openai_pkg, chat};
 
 /// context held: chat_id -> history
 type ChatContexts = HashMap<i64, Vec<String>>;
@@ -96,38 +91,9 @@ fn handle_message(
                                     api.send_message(&params)?;
                                 }
                                 _ => {
-                                    let msg = OpenaiMessage {
-                                        content: create_prompt(&text),
-                                        role: "user".into(),
-                                    };
-
-                                    let chat_params = ChatParams {
-                                        model: "gpt-3.5-turbo".into(),
-                                        messages: vec![msg],
-                                        max_tokens: Some(200),
-                                        temperature: Some(1.25),
-                                        ..Default::default()
-                                    };
-                                    let chat_request = ChatRequest {
-                                        params: chat_params,
-                                        api_key: openai_key.to_string(),
-                                    };
-                                    let request = LLMRequest::Chat(chat_request);
-                                    let msg = Request::new()
-                                        .target(llm_worker)
-                                        .body(request.to_bytes())
-                                        .send_and_await_response(10)??;
-
-                                    let response = LLMResponse::parse(msg.body())?;
-                                    if let LLMResponse::Chat(chat) = response {
-                                        let completion = chat.to_chat_response();
-                                        params.text = completion;
-                                        api.send_message(&params)?;
-                                    } else {
-                                        return Err(anyhow::Error::msg(
-                                            "Error querying OpenAI: wrong result",
-                                        ));
-                                    }
+                                    let response = chat(&text, openai_key, llm_worker)?;
+                                    params.text = response;
+                                    api.send_message(&params)?;
                                 }
                             }
                         }
@@ -149,18 +115,19 @@ call_init!(init);
 
 /// on startup, the auctioneer will need a tg token, open_ai token, and a private key holding the NFTs.
 fn init(our: Address) {
-    println!("auctioneer: give me a tg token!");
+    println!("give me a tg token!");
 
     let msg = await_message().unwrap();
-    println!("Message resceived");
     let token_str = String::from_utf8(msg.body().to_vec()).expect("failed to parse tg token");
     println!("got tg token: {:?}", token_str);
     let (api, tg_worker) = init_tg_bot(our.clone(), &token_str, None).unwrap();
 
-    println!("auctioneer: give me an openai key!");
+    println!("give me an openai key!");
     let msg = await_message().unwrap();
     let openai_key = String::from_utf8(msg.body().to_vec()).expect("failed to parse open_ai key");
+    println!("Got openai key: {:?}", openai_key);
 
+    // println!("give me your private keys!");
     // let msg: Message = await_message().unwrap();
     // let wallet = LocalWallet::from_slice(msg.body()).expect("failed to parse private key");
 
