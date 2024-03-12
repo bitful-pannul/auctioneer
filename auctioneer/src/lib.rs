@@ -1,9 +1,7 @@
-use std::collections::HashMap;
-
-use kinode_process_lib::{await_message, call_init, println, Address, Message, ProcessId, Request};
-
 use alloy_signer::LocalWallet;
 use frankenstein::{ChatId, SendMessageParams, TelegramApi, UpdateContent::Message as TgMessage};
+use kinode_process_lib::{await_message, call_init, println, Address, Message, ProcessId, Request};
+use std::{collections::HashMap, str::FromStr};
 
 mod tg_api;
 use tg_api::{init_tg_bot, Api, TgResponse};
@@ -22,8 +20,8 @@ type ChatContexts = HashMap<i64, Vec<String>>;
 /// offerings: (nft_address, nft_id) -> (rules prompt, min_price)
 type Offerings = HashMap<(Address, u64), (String, u64)>;
 
-/// sold offerings
-type Sold = HashMap<(Address, u64), u64>;
+/// sold offerings: (nft_address, nft_id) -> (price, link)
+type Sold = HashMap<(Address, u64), (u64, String)>;
 
 wit_bindgen::generate!({
     path: "wit",
@@ -158,8 +156,11 @@ fn init(our: Address) {
     let msg = await_message().unwrap();
     let openai_key = String::from_utf8(msg.body().to_vec()).expect("failed to parse open_ai key");
 
+    println!("auctioneer: give me a private key!");
     let msg: Message = await_message().unwrap();
-    let wallet = LocalWallet::from_slice(msg.body()).expect("failed to parse private key");
+    let wallet_str =
+        String::from_utf8(msg.body().to_vec()).expect("failed to parse private key as string");
+    let wallet = LocalWallet::from_str(&wallet_str).expect("failed to parse private key");
 
     let mut chats: ChatContexts = HashMap::new();
     let mut offerings: Offerings = HashMap::new();
