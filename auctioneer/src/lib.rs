@@ -4,15 +4,14 @@ use kinode_process_lib::{await_message, call_init, println, Address, Message, Pr
 use std::{collections::HashMap, str::FromStr};
 
 mod tg_api;
+use prompts::create_chat_params;
 use tg_api::{init_tg_bot, Api, TgResponse};
 
 mod llm_types;
-use llm_types::openai::{
-    ChatParams, ChatRequest, LLMRequest, LLMResponse, Message as OpenaiMessage,
-};
-
 mod prompts;
-use prompts::create_prompt;
+
+mod llm_api;
+use llm_api::{spawn_openai_pkg, OpenaiApi};
 
 /// context held: chat_id -> history
 type ChatContexts = HashMap<i64, Vec<String>>;
@@ -34,9 +33,9 @@ wit_bindgen::generate!({
 fn handle_message(
     _our: &Address,
     api: &Api,
-    worker: &Address,
-    openai_key: &str,
-    _wallet: &LocalWallet,
+    tg_worker: &Address,
+    llm_api: &OpenaiApi,
+    // _wallet: &LocalWallet,
     _chats: &mut ChatContexts,
     _offerings: &mut Offerings,
     _sold: &mut Sold,
@@ -55,11 +54,11 @@ fn handle_message(
             TgResponse::Update(tg_update) => {
                 let updates = tg_update.updates;
                 // assert update is from our worker
-                if source != worker {
+                if source != tg_worker {
                     return Err(anyhow::anyhow!(
                         "unexpected source: {:?}, expected: {:?}",
                         source,
-                        worker
+                        tg_worker
                     ));
                 }
 
@@ -90,41 +89,9 @@ fn handle_message(
                                     api.send_message(&params)?;
                                 }
                                 _ => {
-                                    let msg = OpenaiMessage {
-                                        content: create_prompt(&text),
-                                        role: "user".into(),
-                                    };
-
-                                    let chat_params = ChatParams {
-                                        model: "gpt-3.5-turbo".into(),
-                                        messages: vec![msg],
-                                        max_tokens: Some(200),
-                                        temperature: Some(1.25),
-                                        ..Default::default()
-                                    };
-                                    let chat_request = ChatRequest {
-                                        params: chat_params,
-                                        api_key: openai_key.to_string(),
-                                    };
-                                    let request = LLMRequest::Chat(chat_request);
-                                    let msg = Request::new()
-                                        .target(Address::new(
-                                            "our",
-                                            ProcessId::new(Some("openai"), "llm", "kinode"),
-                                        ))
-                                        .body(request.to_bytes())
-                                        .send_and_await_response(10)??;
-
-                                    let response = LLMResponse::parse(msg.body())?;
-                                    if let LLMResponse::Chat(chat) = response {
-                                        let completion = chat.to_chat_response();
-                                        params.text = completion;
-                                        api.send_message(&params)?;
-                                    } else {
-                                        return Err(anyhow::Error::msg(
-                                            "Error querying OpenAI: wrong result",
-                                        ));
-                                    }
+                                    let response = llm_api.chat(create_chat_params(&text))?;
+                                    params.text = response;
+                                    api.send_message(&params)?;
                                 }
                             }
                         }
@@ -146,21 +113,25 @@ call_init!(init);
 
 /// on startup, the auctioneer will need a tg token, open_ai token, and a private key holding the NFTs.
 fn init(our: Address) {
-    println!("auctioneer: give me a tg token!");
+    println!("give me a tg token!");
 
     let msg = await_message().unwrap();
     let token_str = String::from_utf8(msg.body().to_vec()).expect("failed to parse tg token");
-    let (api, worker) = init_tg_bot(our.clone(), &token_str, None).unwrap();
+    println!("got tg token: {:?}", token_str);
+    let (api, tg_worker) = init_tg_bot(our.clone(), &token_str, None).unwrap();
 
-    println!("auctioneer: give me an openai key!");
+    println!("give me an openai key!");
     let msg = await_message().unwrap();
     let openai_key = String::from_utf8(msg.body().to_vec()).expect("failed to parse open_ai key");
+    println!("Got openai key: {:?}", openai_key);
 
     println!("auctioneer: give me a private key!");
     let msg: Message = await_message().unwrap();
     let wallet_str =
         String::from_utf8(msg.body().to_vec()).expect("failed to parse private key as string");
     let wallet = LocalWallet::from_str(&wallet_str).expect("failed to parse private key");
+
+    let llm_api = spawn_openai_pkg(our.clone(), &openai_key).unwrap();
 
     let mut chats: ChatContexts = HashMap::new();
     let mut offerings: Offerings = HashMap::new();
@@ -170,9 +141,9 @@ fn init(our: Address) {
         match handle_message(
             &our,
             &api,
-            &worker,
-            &openai_key,
-            &wallet,
+            &tg_worker,
+            &llm_api,
+            // &wallet,
             &mut chats,
             &mut offerings,
             &mut sold,
