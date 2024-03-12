@@ -125,11 +125,11 @@ fn init(our: Address) {
     let openai_key = String::from_utf8(msg.body().to_vec()).expect("failed to parse open_ai key");
     println!("Got openai key: {:?}", openai_key);
 
-    // println!("auctioneer: give me a private key!");
-    // let msg: Message = await_message().unwrap();
-    // let wallet_str =
-    //     String::from_utf8(msg.body().to_vec()).expect("failed to parse private key as string");
-    // let wallet = LocalWallet::from_str(&wallet_str).expect("failed to parse private key");
+    println!("auctioneer: give me a private key!");
+    let msg: Message = await_message().unwrap();
+    let wallet_str =
+        String::from_utf8(msg.body().to_vec()).expect("failed to parse private key as string");
+    let wallet = LocalWallet::from_str(&wallet_str).expect("failed to parse private key");
 
     let llm_api = spawn_openai_pkg(our.clone(), &openai_key).unwrap();
 
