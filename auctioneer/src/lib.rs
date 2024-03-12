@@ -17,7 +17,7 @@ mod prompts;
 use prompts::create_prompt;
 
 mod llm_api;
-use llm_api::*;
+use llm_api::init_openai_pkg;
 
 /// context held: chat_id -> history
 type ChatContexts = HashMap<i64, Vec<String>>;
@@ -39,7 +39,8 @@ wit_bindgen::generate!({
 fn handle_message(
     _our: &Address,
     api: &Api,
-    worker: &Address,
+    tg_worker: &Address,
+    llm_worker: &Address,
     openai_key: &str,
     // _wallet: &LocalWallet,
     _chats: &mut ChatContexts,
@@ -60,11 +61,11 @@ fn handle_message(
             TgResponse::Update(tg_update) => {
                 let updates = tg_update.updates;
                 // assert update is from our worker
-                if source != worker {
+                if source != tg_worker {
                     return Err(anyhow::anyhow!(
                         "unexpected source: {:?}, expected: {:?}",
                         source,
-                        worker
+                        tg_worker
                     ));
                 }
 
@@ -113,10 +114,7 @@ fn handle_message(
                                     };
                                     let request = LLMRequest::Chat(chat_request);
                                     let msg = Request::new()
-                                        .target(Address::new(
-                                            "our",
-                                            ProcessId::new(Some("openai"), "llm", "kinode"),
-                                        ))
+                                        .target(llm_worker)
                                         .body(request.to_bytes())
                                         .send_and_await_response(10)??;
 
@@ -157,7 +155,7 @@ fn init(our: Address) {
     println!("Message resceived");
     let token_str = String::from_utf8(msg.body().to_vec()).expect("failed to parse tg token");
     println!("got tg token: {:?}", token_str);
-    let (api, worker) = init_tg_bot(our.clone(), &token_str, None).unwrap();
+    let (api, tg_worker) = init_tg_bot(our.clone(), &token_str, None).unwrap();
 
     println!("auctioneer: give me an openai key!");
     let msg = await_message().unwrap();
@@ -165,6 +163,8 @@ fn init(our: Address) {
 
     // let msg: Message = await_message().unwrap();
     // let wallet = LocalWallet::from_slice(msg.body()).expect("failed to parse private key");
+
+    let llm_worker = init_openai_pkg(our.clone()).unwrap();
 
     let mut chats: ChatContexts = HashMap::new();
     let mut offerings: Offerings = HashMap::new();
@@ -174,7 +174,8 @@ fn init(our: Address) {
         match handle_message(
             &our,
             &api,
-            &worker,
+            &tg_worker,
+            &llm_worker,
             &openai_key,
             // &wallet,
             &mut chats,
