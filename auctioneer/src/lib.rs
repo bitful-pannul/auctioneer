@@ -6,13 +6,14 @@ use alloy_signer::LocalWallet;
 use frankenstein::{ChatId, SendMessageParams, TelegramApi, UpdateContent::Message as TgMessage};
 
 mod tg_api;
+use prompts::create_chat_params;
 use tg_api::{init_tg_bot, Api, TgResponse};
 
 mod llm_types;
 mod prompts;
 
 mod llm_api;
-use llm_api::{init_openai_pkg, chat};
+use llm_api::{spawn_openai_pkg, OpenaiApi};
 
 /// context held: chat_id -> history
 type ChatContexts = HashMap<i64, Vec<String>>;
@@ -35,8 +36,7 @@ fn handle_message(
     _our: &Address,
     api: &Api,
     tg_worker: &Address,
-    llm_worker: &Address,
-    openai_key: &str,
+    llm_api: &OpenaiApi,
     // _wallet: &LocalWallet,
     _chats: &mut ChatContexts,
     _offerings: &mut Offerings,
@@ -91,7 +91,7 @@ fn handle_message(
                                     api.send_message(&params)?;
                                 }
                                 _ => {
-                                    let response = chat(&text, openai_key, llm_worker)?;
+                                    let response = llm_api.chat(create_chat_params(&text))?;
                                     params.text = response;
                                     api.send_message(&params)?;
                                 }
@@ -131,7 +131,7 @@ fn init(our: Address) {
     // let msg: Message = await_message().unwrap();
     // let wallet = LocalWallet::from_slice(msg.body()).expect("failed to parse private key");
 
-    let llm_worker = init_openai_pkg(our.clone()).unwrap();
+    let llm_api = spawn_openai_pkg(our.clone(), &openai_key).unwrap();
 
     let mut chats: ChatContexts = HashMap::new();
     let mut offerings: Offerings = HashMap::new();
@@ -142,8 +142,7 @@ fn init(our: Address) {
             &our,
             &api,
             &tg_worker,
-            &llm_worker,
-            &openai_key,
+            &llm_api,
             // &wallet,
             &mut chats,
             &mut offerings,

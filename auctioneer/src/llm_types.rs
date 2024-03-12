@@ -1,4 +1,5 @@
 // TODO: This was copy-pastad from the llm repo. Remove this once we have a way to properly fetch protocols from processes.
+// TODO: Zen: Upstream this file to llm once this is done.
 pub mod lccp {
 
     use serde::Deserialize;
@@ -239,13 +240,15 @@ pub mod openai {
         Chat(ChatRequest),
     }
 
-    #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-    pub enum LLMResponse {
-        Embedding(EmbeddingResponse),
-        Chat(ChatResponse),
-    }
-
     impl LLMRequest {
+        pub fn new_chat_request(api_key: String, params: ChatParams) -> Self {
+            let chat_request = ChatRequest {
+                api_key,
+                params,
+            };
+            LLMRequest::Chat(chat_request)
+        }
+
         pub fn to_bytes(&self) -> Vec<u8> {
             match self {
                 LLMRequest::Chat(_) | LLMRequest::Embedding(_) => serde_json::to_vec(self).unwrap(),
@@ -257,19 +260,6 @@ pub mod openai {
         }
     }
 
-    impl LLMResponse {
-        pub fn to_bytes(&self) -> Vec<u8> {
-            match self {
-                LLMResponse::Chat(_) | LLMResponse::Embedding(_) => {
-                    serde_json::to_vec(self).unwrap()
-                }
-            }
-        }
-
-        pub fn parse(bytes: &[u8]) -> Result<LLMResponse, serde_json::Error> {
-            serde_json::from_slice::<LLMResponse>(bytes)
-        }
-    }
 
     #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq)]
     pub struct EmbeddingRequest {
@@ -283,38 +273,6 @@ pub mod openai {
         pub model: String,
     }
 
-    #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq)]
-    pub struct EmbeddingResponse {
-        pub embedding: Vec<f32>,
-    }
-
-    impl EmbeddingResponse {
-        pub fn from_openai_response(openai_response: OpenAiEmbeddingResponse) -> Self {
-            let embedding_values: Vec<f32> = openai_response.data[0]
-                .embedding
-                .iter()
-                .map(|&value| value as f32)
-                .collect();
-            EmbeddingResponse {
-                embedding: embedding_values,
-            }
-        }
-    }
-
-    #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq)]
-    pub struct OpenAiEmbeddingResponse {
-        pub object: String,
-        pub data: Vec<EmbeddingData>,
-        pub model: String,
-        pub usage: Usage,
-    }
-
-    #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq)]
-    pub struct EmbeddingData {
-        pub object: String,
-        pub index: u32,
-        pub embedding: Vec<f64>,
-    }
 
     #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq)]
     pub struct ChatRequest {
@@ -359,6 +317,9 @@ pub mod openai {
         #[serde(skip_serializing_if = "Option::is_none")]
         pub user: Option<String>,
     }
+
+    
+
     #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq)]
     pub struct Message {
         pub role: String,
@@ -424,5 +385,58 @@ pub mod openai {
         pub prompt_tokens: i32,
         pub completion_tokens: Option<i32>,
         pub total_tokens: i32,
+    }
+
+    #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+    pub enum LLMResponse {
+        Embedding(EmbeddingResponse),
+        Chat(ChatResponse),
+    }
+
+    impl LLMResponse {
+        pub fn to_bytes(&self) -> Vec<u8> {
+            match self {
+                LLMResponse::Chat(_) | LLMResponse::Embedding(_) => {
+                    serde_json::to_vec(self).unwrap()
+                }
+            }
+        }
+
+        pub fn parse(bytes: &[u8]) -> Result<LLMResponse, serde_json::Error> {
+            serde_json::from_slice::<LLMResponse>(bytes)
+        }
+    }
+
+    #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq)]
+    pub struct EmbeddingResponse {
+        pub embedding: Vec<f32>,
+    }
+
+    impl EmbeddingResponse {
+        pub fn from_openai_response(openai_response: OpenAiEmbeddingResponse) -> Self {
+            let embedding_values: Vec<f32> = openai_response.data[0]
+                .embedding
+                .iter()
+                .map(|&value| value as f32)
+                .collect();
+            EmbeddingResponse {
+                embedding: embedding_values,
+            }
+        }
+    }
+
+    #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq)]
+    pub struct OpenAiEmbeddingResponse {
+        pub object: String,
+        pub data: Vec<EmbeddingData>,
+        pub model: String,
+        pub usage: Usage,
+    }
+
+    #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq)]
+    pub struct EmbeddingData {
+        pub object: String,
+        pub index: u32,
+        pub embedding: Vec<f64>,
     }
 }
