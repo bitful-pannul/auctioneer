@@ -1,6 +1,15 @@
+// use alloy_network::TxSignerSync;
+// use alloy_consensus
+use alloy_primitives::{Address as EthAddress, Bytes};
 use alloy_signer::LocalWallet;
+use alloy_sol_types::SolValue;
+
+// these will hopefully be removed soon, once alloy unbreaks
+use ethers_core::types::{transaction::eip2718::TypedTransaction, Eip1559TransactionRequest};
+use ethers_signers::LocalWallet as EthersWallet;
+
 use frankenstein::{ChatId, SendMessageParams, TelegramApi, UpdateContent::Message as TgMessage};
-use kinode_process_lib::{await_message, call_init, println, Address, Message, ProcessId, Request};
+use kinode_process_lib::{await_message, call_init, eth::Provider, println, Address, Message};
 use std::{collections::HashMap, str::FromStr};
 
 mod tg_api;
@@ -12,6 +21,8 @@ mod prompts;
 
 mod llm_api;
 use llm_api::{spawn_openai_pkg, OpenaiApi};
+
+mod contracts;
 
 /// context held: chat_id -> history
 type ChatContexts = HashMap<i64, Vec<String>>;
@@ -35,7 +46,8 @@ fn handle_message(
     api: &Api,
     tg_worker: &Address,
     llm_api: &OpenaiApi,
-    // _wallet: &LocalWallet,
+    wallet: &mut LocalWallet,
+    ethers_wallet: &mut EthersWallet,
     _chats: &mut ChatContexts,
     _offerings: &mut Offerings,
     _sold: &mut Sold,
@@ -50,61 +62,129 @@ fn handle_message(
             ref source,
             ref body,
             ..
-        } => match serde_json::from_slice(body)? {
-            TgResponse::Update(tg_update) => {
-                let updates = tg_update.updates;
-                // assert update is from our worker
-                if source != tg_worker {
-                    return Err(anyhow::anyhow!(
-                        "unexpected source: {:?}, expected: {:?}",
-                        source,
-                        tg_worker
-                    ));
-                }
+        } => {
+            match serde_json::from_slice(body)? {
+                TgResponse::Update(tg_update) => {
+                    let updates = tg_update.updates;
+                    // assert update is from our worker
+                    if source != tg_worker {
+                        return Err(anyhow::anyhow!(
+                            "unexpected source: {:?}, expected: {:?}",
+                            source,
+                            tg_worker
+                        ));
+                    }
 
-                if let Some(update) = updates.last() {
-                    match &update.content {
-                        TgMessage(msg) => {
-                            // get msg contents, and branch on what to send back!
-                            let text = msg.text.clone().unwrap_or_default();
+                    if let Some(update) = updates.last() {
+                        match &update.content {
+                            TgMessage(msg) => {
+                                // get msg contents, and branch on what to send back!
+                                let text = msg.text.clone().unwrap_or_default();
 
-                            // fill in default send_message params, switch content later!
-                            let mut params = SendMessageParams {
-                                chat_id: ChatId::Integer(msg.chat.id),
-                                disable_notification: None,
-                                entities: None,
-                                link_preview_options: None,
-                                message_thread_id: None,
-                                parse_mode: None,
-                                text: "temp".to_string(),
-                                protect_content: None,
-                                reply_markup: None,
-                                reply_parameters: None,
-                                // todo, maybe change api so can ..Default::default()?
-                            };
+                                // fill in default send_message params, switch content later!
+                                let mut params = SendMessageParams {
+                                    chat_id: ChatId::Integer(msg.chat.id),
+                                    disable_notification: None,
+                                    entities: None,
+                                    link_preview_options: None,
+                                    message_thread_id: None,
+                                    parse_mode: None,
+                                    text: "temp".to_string(),
+                                    protect_content: None,
+                                    reply_markup: None,
+                                    reply_parameters: None,
+                                    // todo, maybe change api so can ..Default::default()?
+                                };
 
-                            match text.as_str() {
-                                "/start" => {
-                                    params.text = "I'm an auctioneer acting for X, I can tell u about what I have for sale currently.".to_string();
-                                    api.send_message(&params)?;
-                                }
-                                _ => {
-                                    let response = llm_api.chat(create_chat_params(&text))?;
-                                    params.text = response;
-                                    api.send_message(&params)?;
+                                match text.as_str() {
+                                    "/start" => {
+                                        params.text = "I'm an auctioneer acting for X, I can tell u about what I have for sale currently.".to_string();
+                                        api.send_message(&params)?;
+                                    }
+                                    "/sell" => {
+                                        // hardcoded test:
+                                        let buyer = EthAddress::from_str(
+                                            "0x7A01FEd09b0d42365c336CCB0cb0C72550CB9854",
+                                        )
+                                        .unwrap();
+
+                                        // could make for arbitrary chain_id here?
+                                        let provider = Provider::new(11155111, 10);
+
+                                        let seller = buyer;
+                                        let chain_id = 11155111;
+
+                                        let ape_contract = EthAddress::from_str(
+                                            "0xE29F8038d1A3445Ab22AD1373c65eC0a6E1161a4",
+                                        )
+                                        .unwrap();
+                                        let ape_id = 258;
+
+                                        let opensea =
+                                            EthAddress::from_str(contracts::SEAPORT).unwrap();
+
+                                        let price = 2;
+
+                                        let order = contracts::create_listing(
+                                            &seller,
+                                            &wallet,
+                                            &ape_contract,
+                                            ape_id,
+                                            &buyer,
+                                            price,
+                                            chain_id,
+                                        )?;
+                                        let order_bytes = order.abi_encode();
+
+                                        let nonce = provider
+                                            .get_transaction_count(seller, None)
+                                            .map_err(|_| anyhow::anyhow!("failed to get nonce"))?;
+
+                                        let tx = Eip1559TransactionRequest::new()
+                                            .to(contracts::SEAPORT)
+                                            .nonce(nonce.to::<u64>())
+                                            .data(order_bytes)
+                                            .chain_id(11155111)
+                                            .gas(1000000);
+
+                                        let signature = ethers_wallet.sign_transaction_sync(
+                                            &TypedTransaction::Eip1559(tx.clone()),
+                                        )?;
+
+                                        let tx_bytes = tx.rlp_signed(&signature);
+
+                                        let tx_hash = provider
+                                            .send_raw_transaction(Bytes::from(tx_bytes.to_vec()))
+                                            .map_err(|e| {
+                                                anyhow::anyhow!(
+                                                    "failed to send transaction: {:?}",
+                                                    e
+                                                )
+                                            })?;
+
+                                        println!(
+                                            "got through some type of listing..., tx_hash {:?}",
+                                            tx_hash
+                                        );
+                                    }
+                                    _ => {
+                                        let response = llm_api.chat(create_chat_params(&text))?;
+                                        params.text = response;
+                                        api.send_message(&params)?;
+                                    }
                                 }
                             }
-                        }
-                        _ => {
-                            println!("got unhandled tg update: {:?}", update);
+                            _ => {
+                                println!("got unhandled tg update: {:?}", update);
+                            }
                         }
                     }
                 }
+                TgResponse::Error(e) => {
+                    println!("error from tg worker: {:?}", e);
+                }
             }
-            TgResponse::Error(e) => {
-                println!("error from tg worker: {:?}", e);
-            }
-        },
+        }
     }
     Ok(())
 }
@@ -129,7 +209,14 @@ fn init(our: Address) {
     let msg: Message = await_message().unwrap();
     let wallet_str =
         String::from_utf8(msg.body().to_vec()).expect("failed to parse private key as string");
-    let wallet = LocalWallet::from_str(&wallet_str).expect("failed to parse private key");
+    let mut wallet = wallet_str
+        .parse::<LocalWallet>()
+        .expect("failed to parse private key");
+
+    // temp extra wallet, ethers, for encoding the Transaction itself...
+    let mut ethers_wallet = wallet_str
+        .parse::<EthersWallet>()
+        .expect("failed to parse private key");
 
     let llm_api = spawn_openai_pkg(our.clone(), &openai_key).unwrap();
 
@@ -143,7 +230,8 @@ fn init(our: Address) {
             &api,
             &tg_worker,
             &llm_api,
-            // &wallet,
+            &mut wallet,
+            &mut ethers_wallet,
             &mut chats,
             &mut offerings,
             &mut sold,
