@@ -1,8 +1,7 @@
-use alloy_consensus::{SignableTransaction, TxEip1559};
+use alloy_consensus::{SignableTransaction, TxLegacy};
 use alloy_network::TxSignerSync;
 use alloy_primitives::{Address as EthAddress, Bytes, TxKind};
 use alloy_signer::LocalWallet;
-use alloy_sol_types::SolValue;
 
 use frankenstein::{ChatId, SendMessageParams, TelegramApi, UpdateContent::Message as TgMessage};
 use kinode_process_lib::{await_message, call_init, eth::Provider, println, Address, Message};
@@ -99,21 +98,21 @@ fn handle_message(
                                     "/sell" => {
                                         // hardcoded test:
                                         let buyer = EthAddress::from_str(
-                                            "0x7A01FEd09b0d42365c336CCB0cb0C72550CB9854",
+                                            "0x4dEdd1563Fc449e845542A2199A8028E65Bb3e34",
                                         )
                                         .unwrap();
 
                                         // could make for arbitrary chain_id here?
-                                        let provider = Provider::new(11155111, 10);
+                                        let provider = Provider::new(10, 10);
 
                                         let seller = wallet.address();
-                                        let chain_id = 11155111;
+                                        let chain_id = 10;
 
                                         let ape_contract = EthAddress::from_str(
-                                            "0xE29F8038d1A3445Ab22AD1373c65eC0a6E1161a4",
+                                            "0xfA14e1157F35E1dAD95dC3F822A9d18c40e360E2",
                                         )
                                         .unwrap();
-                                        let ape_id = 258;
+                                        let ape_id = 506090;
 
                                         let opensea =
                                             EthAddress::from_str(contracts::SEAPORT).unwrap();
@@ -129,19 +128,17 @@ fn handle_message(
                                             price,
                                             chain_id,
                                         )?;
-                                        let order_bytes = order.abi_encode();
 
                                         let nonce = provider
                                             .get_transaction_count(seller, None)
                                             .map_err(|_| anyhow::anyhow!("failed to get nonce"))?;
 
-                                        let mut tx = TxEip1559 {
-                                            chain_id: chain_id,
+                                        let mut tx = TxLegacy {
+                                            chain_id: Some(chain_id),
                                             nonce: nonce.to::<u64>(),
-                                            input: Bytes::from(order_bytes),
-                                            max_priority_fee_per_gas: 1000000000,
-                                            max_fee_per_gas: 1000000000,
-                                            gas_limit: 1000000,
+                                            input: Bytes::from(order),
+                                            gas_price: 100000000000, // Adjusted gas price; consider fetching current network conditions
+                                            gas_limit: 100000, // Increased gas limit to accommodate contract interaction
                                             to: TxKind::Call(opensea),
                                             ..Default::default()
                                         };

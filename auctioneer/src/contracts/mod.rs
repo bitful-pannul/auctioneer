@@ -1,6 +1,6 @@
 use alloy_primitives::{Address, FixedBytes, U256};
 use alloy_signer::{LocalWallet, SignerSync};
-use alloy_sol_types::{sol, Eip712Domain};
+use alloy_sol_types::{sol, Eip712Domain, SolCall};
 use std::str::FromStr;
 
 /// Seaport cross-chain address constants
@@ -19,7 +19,7 @@ pub fn create_listing(
     buyer: &Address,
     price: u64,
     chain_id: u64,
-) -> anyhow::Result<Order> {
+) -> anyhow::Result<Vec<u8>> {
     let order = OrderParameters {
         offerer: *seller,
         zone: *buyer,
@@ -66,7 +66,7 @@ pub fn create_listing(
         zoneHash: FixedBytes::from([0; 32]),
         salt: U256::from(0),
         conduitKey: FixedBytes::from_str(CONDUITKEY).unwrap(),
-        totalOriginalConsiderationItems: U256::from(1),
+        totalOriginalConsiderationItems: U256::from(2),
     };
 
     let domain = Eip712Domain {
@@ -78,10 +78,16 @@ pub fn create_listing(
     };
 
     let sig = wallet.sign_typed_data_sync(&order, &domain)?;
-    Ok(Order {
+    let order = Order {
         parameters: order,
         signature: sig.into(),
-    })
+    };
+
+    let validate_call = validateCall {
+        orders: vec![order],
+    };
+
+    Ok(validate_call.abi_encode())
 }
 
 // solidity types for interacting with the seaport contracts.
