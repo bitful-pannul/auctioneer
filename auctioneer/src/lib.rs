@@ -1,12 +1,8 @@
-// use alloy_network::TxSignerSync;
-// use alloy_consensus
-use alloy_primitives::{Address as EthAddress, Bytes};
+use alloy_consensus::{SignableTransaction, TxEip1559};
+use alloy_network::TxSignerSync;
+use alloy_primitives::{Address as EthAddress, Bytes, TxKind};
 use alloy_signer::LocalWallet;
 use alloy_sol_types::SolValue;
-
-// these will hopefully be removed soon, once alloy unbreaks
-use ethers_core::types::{transaction::eip2718::TypedTransaction, Eip1559TransactionRequest};
-use ethers_signers::LocalWallet as EthersWallet;
 
 use frankenstein::{ChatId, SendMessageParams, TelegramApi, UpdateContent::Message as TgMessage};
 use kinode_process_lib::{await_message, call_init, eth::Provider, println, Address, Message};
@@ -47,7 +43,6 @@ fn handle_message(
     tg_worker: &Address,
     llm_api: &OpenaiApi,
     wallet: &mut LocalWallet,
-    ethers_wallet: &mut EthersWallet,
     _chats: &mut ChatContexts,
     _offerings: &mut Offerings,
     _sold: &mut Sold,
@@ -111,7 +106,7 @@ fn handle_message(
                                         // could make for arbitrary chain_id here?
                                         let provider = Provider::new(11155111, 10);
 
-                                        let seller = buyer;
+                                        let seller = wallet.address();
                                         let chain_id = 11155111;
 
                                         let ape_contract = EthAddress::from_str(
@@ -140,21 +135,24 @@ fn handle_message(
                                             .get_transaction_count(seller, None)
                                             .map_err(|_| anyhow::anyhow!("failed to get nonce"))?;
 
-                                        let tx = Eip1559TransactionRequest::new()
-                                            .to(contracts::SEAPORT)
-                                            .nonce(nonce.to::<u64>())
-                                            .data(order_bytes)
-                                            .chain_id(11155111)
-                                            .gas(1000000);
+                                        let mut tx = TxEip1559 {
+                                            chain_id: chain_id,
+                                            nonce: nonce.to::<u64>(),
+                                            input: Bytes::from(order_bytes),
+                                            max_priority_fee_per_gas: 1000000000,
+                                            max_fee_per_gas: 1000000000,
+                                            gas_limit: 1000000,
+                                            to: TxKind::Call(opensea),
+                                            ..Default::default()
+                                        };
 
-                                        let signature = ethers_wallet.sign_transaction_sync(
-                                            &TypedTransaction::Eip1559(tx.clone()),
-                                        )?;
+                                        let mut buf = vec![];
+                                        let sig = wallet.sign_transaction_sync(&mut tx)?;
 
-                                        let tx_bytes = tx.rlp_signed(&signature);
+                                        tx.encode_signed(&sig, &mut buf);
 
                                         let tx_hash = provider
-                                            .send_raw_transaction(Bytes::from(tx_bytes.to_vec()))
+                                            .send_raw_transaction(Bytes::from(buf))
                                             .map_err(|e| {
                                                 anyhow::anyhow!(
                                                     "failed to send transaction: {:?}",
@@ -213,11 +211,6 @@ fn init(our: Address) {
         .parse::<LocalWallet>()
         .expect("failed to parse private key");
 
-    // temp extra wallet, ethers, for encoding the Transaction itself...
-    let mut ethers_wallet = wallet_str
-        .parse::<EthersWallet>()
-        .expect("failed to parse private key");
-
     let llm_api = spawn_openai_pkg(our.clone(), &openai_key).unwrap();
 
     let mut chats: ChatContexts = HashMap::new();
@@ -231,7 +224,6 @@ fn init(our: Address) {
             &tg_worker,
             &llm_api,
             &mut wallet,
-            &mut ethers_wallet,
             &mut chats,
             &mut offerings,
             &mut sold,
