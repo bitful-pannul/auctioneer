@@ -419,6 +419,7 @@ dependencies = [
  "bincode",
  "frankenstein",
  "kinode_process_lib",
+ "rand",
  "serde",
  "serde_json",
  "url",

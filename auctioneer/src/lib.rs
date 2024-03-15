@@ -1,10 +1,8 @@
-use alloy_consensus::{SignableTransaction, TxLegacy};
-use alloy_network::TxSignerSync;
-use alloy_primitives::{Address as EthAddress, Bytes, TxKind};
+use alloy_primitives::Address as EthAddress;
 use alloy_signer::LocalWallet;
 
 use frankenstein::{ChatId, SendMessageParams, TelegramApi, UpdateContent::Message as TgMessage};
-use kinode_process_lib::{await_message, call_init, eth::Provider, println, Address, Message};
+use kinode_process_lib::{await_message, call_init, eth, println, Address, Message};
 use std::{collections::HashMap, str::FromStr};
 
 mod tg_api;
@@ -102,65 +100,37 @@ fn handle_message(
                                         )
                                         .unwrap();
 
-                                        // could make for arbitrary chain_id here?
-                                        let provider = Provider::new(10, 10);
-
-                                        let seller = wallet.address();
-                                        let chain_id = 10;
-
                                         let ape_contract = EthAddress::from_str(
                                             "0xfA14e1157F35E1dAD95dC3F822A9d18c40e360E2",
                                         )
                                         .unwrap();
                                         let ape_id = 506090;
-
-                                        let opensea =
-                                            EthAddress::from_str(contracts::SEAPORT).unwrap();
-
                                         let price = 2;
 
-                                        let order = contracts::create_listing(
-                                            &seller,
-                                            &wallet,
-                                            &ape_contract,
-                                            ape_id,
-                                            &buyer,
-                                            price,
-                                            chain_id,
-                                        )?;
-
-                                        let nonce = provider
-                                            .get_transaction_count(seller, None)
-                                            .map_err(|_| anyhow::anyhow!("failed to get nonce"))?;
-
-                                        let mut tx = TxLegacy {
-                                            chain_id: Some(chain_id),
-                                            nonce: nonce.to::<u64>(),
-                                            input: Bytes::from(order),
-                                            gas_price: 100000000000, // Adjusted gas price; consider fetching current network conditions
-                                            gas_limit: 100000, // Increased gas limit to accommodate contract interaction
-                                            to: TxKind::Call(opensea),
-                                            ..Default::default()
-                                        };
-
-                                        let mut buf = vec![];
-                                        let sig = wallet.sign_transaction_sync(&mut tx)?;
-
-                                        tx.encode_signed(&sig, &mut buf);
-
-                                        let tx_hash = provider
-                                            .send_raw_transaction(Bytes::from(buf))
-                                            .map_err(|e| {
+                                        let provider = eth::Provider::new(10, 10);
+                                        let block_number =
+                                            provider.get_block_number().map_err(|e| {
                                                 anyhow::anyhow!(
-                                                    "failed to send transaction: {:?}",
+                                                    "failed to get block number: {:?}",
                                                     e
                                                 )
                                             })?;
 
-                                        println!(
-                                            "got through some type of listing..., tx_hash {:?}",
-                                            tx_hash
+                                        let valid_until = block_number + 500;
+                                        let (uid, sig) = contracts::create_offer(
+                                            wallet,
+                                            &ape_contract,
+                                            ape_id,
+                                            &buyer,
+                                            price,
+                                            valid_until,
+                                        )?;
+                                        let response = format!(
+                                            "Sell offer here:  with uid: {}. Here's the signature: {:?}",
+                                             uid, sig
                                         );
+                                        params.text = response;
+                                        api.send_message(&params)?;
                                     }
                                     _ => {
                                         let response = llm_api.chat(create_chat_params(&text))?;
