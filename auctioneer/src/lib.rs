@@ -153,6 +153,11 @@ fn handle_request(source: &Address, body: &[u8], state: &mut State) -> anyhow::R
         ..
     } = state;
 
+    // TODO: Let's not handle incoming http requests afterwards for now
+    if msg.source().process == "http_server:distro:sys" {
+        return Ok(());
+    }
+
     match serde_json::from_slice(body)? {
         TgResponse::Update(tg_update) => {
             let updates = tg_update.updates;
