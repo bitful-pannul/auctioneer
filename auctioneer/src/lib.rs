@@ -2,7 +2,7 @@ use alloy_primitives::Address as EthAddress;
 use alloy_signer::LocalWallet;
 
 use frankenstein::{ChatId, SendMessageParams, TelegramApi, UpdateContent::Message as TgMessage};
-use kinode_process_lib::{await_message, call_init, eth, println, Address, Message};
+use kinode_process_lib::{await_message, call_init, println, Address, Message};
 use std::{collections::HashMap, str::FromStr};
 
 mod tg_api;
@@ -105,18 +105,14 @@ fn handle_message(
                                         )
                                         .unwrap();
                                         let ape_id = 258;
-                                        let price = 100;
+                                        let price = 500;
 
-                                        let provider = eth::Provider::new(11155111, 10);
-                                        let block_number =
-                                            provider.get_block_number().map_err(|e| {
-                                                anyhow::anyhow!(
-                                                    "failed to get block number: {:?}",
-                                                    e
-                                                )
-                                            })?;
+                                        let valid_until = std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .expect("Time went backwards")
+                                            .as_secs()
+                                            + 60 * 60 * 24 * 7;
 
-                                        let valid_until = block_number + 500;
                                         let (uid, sig) = contracts::create_offer(
                                             wallet,
                                             &ape_contract,
