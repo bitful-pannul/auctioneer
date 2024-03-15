@@ -148,7 +148,7 @@ fn handle_request(source: &Address, body: &[u8], state: &mut State) -> anyhow::R
 fn startup_loop(our: &Address) -> State {
     loop {
         if let Ok(msg) = await_message() {
-            if msg.source() != our {
+            if msg.source().node != our.node {
                 continue;
             }
             if msg.source().process == "http_server:distro:sys" {
@@ -222,6 +222,8 @@ fn init(our: Address) {
     // That's a mouthful innit
 
     let mut state = startup_loop(&our);
+
+    println!("Startup loop escape velocity!");
 
     loop {
         match handle_message(&our, &mut state) {

@@ -15,12 +15,45 @@
     <title>Chess</title>
     <script type="module" crossorigin src="/chess:chess:sys/assets/index-237df385.js"></script>
     <link rel="stylesheet" href="/chess:chess:sys/assets/index-383827d3.css">
+    <style>
+      .tooltip {
+          position: relative;
+          display: inline-block;
+      }
+
+      .tooltip .tooltiptext {
+          visibility: hidden;
+          width: 20vw; /* Changed to viewport width for responsiveness */
+          min-width: 10rem; /* Minimum width to ensure readability */
+          background-color: black;
+          color: #fff;
+          text-align: left;
+          border-radius: 0.5rem;
+          padding: 1rem; /* Increased padding for better spacing */
+          position: absolute;
+          z-index: 1;
+          bottom: 100%;
+          left: 50%;
+          transform: translateX(-50%); /* Centering tooltip */
+          opacity: 0;
+          transition: opacity 0.3s;
+          white-space: normal;
+          overflow-y: auto; /* Enable vertical scrolling */
+          max-height: 30vh; /* Increased maximum height relative to the viewport height */
+          font-size: 0.8rem; /* Smaller text size */
+      }
+
+      .tooltip:hover .tooltiptext {
+          visibility: visible;
+          opacity: 1;
+      }
+    </style>
   </head>
   <body>
     <main class="col">
         <h1>Configuration</h1>
         <form id="config-form" class="col">
-            <label for="openai-key">OpenAI API Key <span class="tooltip">?</span>
+            <label for="openai-key">OpenAI API Key <span class="tooltip">?
                 <span class="tooltiptext">
                     1. Visit OpenAI's signup page.<br>
                     2. Create an account and navigate to API section.<br>
@@ -29,10 +62,10 @@
                     5. Type 'y' to proceed with entering the API key.<br>
                     6. Paste the API key into the input.
                 </span>
-            </label>
+            </span></label>
             <input id="openai-key" required="" name="openai-key" placeholder="OpenAI API Key" value="">
             
-            <label for="telegram-bot-api-key">Telegram Bot API Key <span class="tooltip">?</span>
+            <label for="telegram-bot-api-key">Telegram Bot API Key <span class="tooltip">?
                 <span class="tooltiptext">
                     1. Open Telegram and search for "@BotFather".<br>
                     2. Start a conversation and type `/newbot`.<br>
@@ -41,10 +74,10 @@
                     5. Type 'y' to proceed with entering the bot API key.<br>
                     6. Paste the bot API key into the input.
                 </span>
-            </label>
+            </span></label>
             <input id="telegram-bot-api-key" required="" name="telegram-bot-api-key" placeholder="Telegram Bot API Key" value="">
             
-            <label for="private-wallet-address">Private Wallet Address <span class="tooltip">?</span>
+            <label for="private-wallet-address">Private Wallet Address <span class="tooltip">?
                 <span class="tooltiptext">
                     1. Choose a wallet provider and create a new wallet.<br>
                     2. Securely go through the wallet creation process.<br>
@@ -53,7 +86,7 @@
                     5. Type 'y' to proceed with entering your Ethereum address.<br>
                     6. Use your Ethereum address as directed.
                 </span>
-            </label>
+            </span></label>
             <input id="private-wallet-address" required="" name="private-wallet-address" placeholder="Private Wallet Address" value="">
             <button> Submit </button>
         </form>
