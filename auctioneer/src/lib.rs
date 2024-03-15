@@ -1,7 +1,11 @@
 use alloy_primitives::Address as EthAddress;
 use alloy_signer::LocalWallet;
-use frankenstein::{ChatId, SendMessageParams, TelegramApi, UpdateContent::Message as TgMessage, UpdateContent::ChannelPost as TgChannelPost};
-use kinode_process_lib::{await_message, call_init, eth, println, Address, Message};
+
+use frankenstein::{
+    ChatId, SendMessageParams, TelegramApi, UpdateContent::ChannelPost as TgChannelPost,
+    UpdateContent::Message as TgMessage,
+};
+use kinode_process_lib::{await_message, call_init, println, Address, Message};
 
 use std::{collections::HashMap, str::FromStr};
 
@@ -107,48 +111,6 @@ fn handle_request(
                         params.text = if text == "/reset" {
                             context_manager.clear(msg.chat.id);
                             "Reset succesful!".to_string()
-                        } else if text == "/sell" {
-                            // hardcoded test:
-                            let buyer: EthAddress = EthAddress::from_str(
-                                "0x1F22784FfA5923465AC9d2D1488AB61a72bcEE65",
-                            )
-                            .unwrap();
-
-                            let ape_contract = EthAddress::from_str(
-                                "0xE29F8038d1A3445Ab22AD1373c65eC0a6E1161a4",
-                            )
-                            .unwrap();
-                            let ape_id = 258;
-                            let price = 100;
-
-                            let provider = eth::Provider::new(11155111, 10);
-                            let block_number =
-                                provider.get_block_number().map_err(|e| {
-                                    anyhow::anyhow!(
-                                        "failed to get block number: {:?}",
-                                        e
-                                    )
-                                })?;
-
-                            let valid_until = block_number + 500;
-                            let (uid, sig) = contracts::create_offer(
-                                wallet,
-                                &ape_contract,
-                                ape_id,
-                                &buyer,
-                                price,
-                                valid_until,
-                            )?;
-
-                            let sig_formatted = sig.as_bytes();
-                            let sig = hex::encode(sig_formatted);
-                            let response = format!(
-                                "Sell offer here:  with uid: {}. Here's the signature: {:?}, also valid until: {:?}",
-                                 uid, sig, valid_until
-                            );
-                            params.text = response;
-                            api.send_message(&params)?;
-                            "".to_string() // TODO: Zen
                         } else {
                             let (text, sold) = context_manager.chat(msg.chat.id, &text)?;
                             println!("Sale has been received with {:?}", sold);
