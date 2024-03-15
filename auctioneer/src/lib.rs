@@ -59,6 +59,75 @@ wit_bindgen::generate!({
     },
 });
 
+fn startup_loop(our: &Address) -> State {
+    loop {
+        if let Ok(msg) = await_message() {
+            if msg.source().node != our.node {
+                continue;
+            }
+            if msg.source().process == "http_server:distro:sys" {
+                if let Ok(initial_config) = get_initial_config(&our, &msg) {
+                    let Ok(openai_api) = spawn_openai_pkg(our.clone(), &initial_config.openai_key)
+                    else {
+                        println!("openAI couldn't boot.");
+                        continue;
+                    };
+                    let Ok((tg_api, tg_worker)) =
+                        init_tg_bot(our.clone(), &initial_config.telegram_bot_api_key, None)
+                    else {
+                        println!("tg bot couldn't boot.");
+                        continue;
+                    };
+
+                    let Ok(wallet) = initial_config.private_wallet_address.parse::<LocalWallet>()
+                    else {
+                        println!("couldn't parse private key.");
+                        continue;
+                    };
+
+                    // CLI, UI:
+                    // - UI approve() -> send, POST (price, prompt, address, id)
+
+                    let state = State {
+                        tg_api,
+                        tg_worker,
+                        _wallet: wallet,
+                        context_manager: ContextManager::new(openai_api, &NFTS),
+                        _offerings: HashMap::new(),
+                        _sold: HashMap::new(),
+                    };
+                    return state;
+                }
+            }
+        }
+    }
+}
+
+fn get_initial_config(_our: &Address, message: &Message) -> anyhow::Result<InitialConfig> {
+    let server_request = http::HttpServerRequest::from_bytes(message.body())?;
+    let http_request = server_request
+        .request()
+        .ok_or_else(|| anyhow::anyhow!("Request not found"))?;
+
+    if http_request.method().unwrap() != http::Method::PUT {
+        http::send_response(
+            http::StatusCode::NOT_FOUND,
+            None,
+            b"Path not found".to_vec(),
+        );
+        return Err(anyhow::anyhow!("Invalid method"));
+    }
+
+    let body = get_blob().ok_or_else(|| anyhow::anyhow!("Blob not found"))?;
+
+    let initial_config = serde_json::from_slice::<InitialConfig>(&body.bytes).map_err(|e| {
+        println!("Error parsing configuration: {:?}", e);
+        anyhow::Error::new(e)
+    })?;
+    println!("Received initialconfig: {:?}", initial_config);
+    Ok(initial_config)
+}
+
 fn handle_message(_our: &Address, state: &mut State) -> anyhow::Result<()> {
     let message = await_message()?;
 
@@ -141,76 +210,6 @@ fn handle_request(source: &Address, body: &[u8], state: &mut State) -> anyhow::R
         }
     }
     Ok(())
-}
-
-/// Wait for Initialize command to come in either from frontend or from the CLI.
-fn startup_loop(our: &Address) -> State {
-    loop {
-        if let Ok(msg) = await_message() {
-            if msg.source().node != our.node {
-                continue;
-            }
-            if msg.source().process == "http_server:distro:sys" {
-                if let Ok(initial_config) = get_initial_config(&our, &msg) {
-                    let Ok(openai_api) = spawn_openai_pkg(our.clone(), &initial_config.openai_key)
-                    else {
-                        println!("openAI couldn't boot.");
-                        continue;
-                    };
-                    let Ok((tg_api, tg_worker)) =
-                        init_tg_bot(our.clone(), &initial_config.telegram_bot_api_key, None)
-                    else {
-                        println!("tg bot couldn't boot.");
-                        continue;
-                    };
-
-                    let Ok(wallet) = initial_config.private_wallet_address.parse::<LocalWallet>()
-                    else {
-                        println!("couldn't parse private key.");
-                        continue;
-                    };
-
-                    // CLI, UI:
-                    // - UI approve() -> send, POST (price, prompt, address, id)
-
-                    let state = State {
-                        tg_api,
-                        tg_worker,
-                        _wallet: wallet,
-                        context_manager: ContextManager::new(openai_api, &NFTS),
-                        _offerings: HashMap::new(),
-                        _sold: HashMap::new(),
-                    };
-                    return state;
-                }
-            }
-        }
-    }
-}
-
-fn get_initial_config(_our: &Address, message: &Message) -> anyhow::Result<InitialConfig> {
-    let server_request = http::HttpServerRequest::from_bytes(message.body())?;
-    let http_request = server_request
-        .request()
-        .ok_or_else(|| anyhow::anyhow!("Request not found"))?;
-
-    if http_request.method().unwrap() != http::Method::PUT {
-        http::send_response(
-            http::StatusCode::NOT_FOUND,
-            None,
-            b"Path not found".to_vec(),
-        );
-        return Err(anyhow::anyhow!("Invalid method"));
-    }
-
-    let body = get_blob().ok_or_else(|| anyhow::anyhow!("Blob not found"))?;
-
-    let initial_config = serde_json::from_slice::<InitialConfig>(&body.bytes).map_err(|e| {
-        println!("Error parsing configuration: {:?}", e);
-        anyhow::Error::new(e)
-    })?;
-    println!("Received initialconfig: {:?}", initial_config);
-    Ok(initial_config)
 }
 
 call_init!(init);
