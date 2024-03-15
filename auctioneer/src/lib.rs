@@ -1,13 +1,11 @@
-use alloy_primitives::Address as EthAddress;
 use alloy_signer::LocalWallet;
-
 use frankenstein::{
     ChatId, SendMessageParams, TelegramApi, UpdateContent::ChannelPost as TgChannelPost,
     UpdateContent::Message as TgMessage,
 };
 use kinode_process_lib::{await_message, call_init, println, Address, Message};
-
-use std::{collections::HashMap, str::FromStr};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 mod tg_api;
 use tg_api::{init_tg_bot, Api, TgResponse};
@@ -21,6 +19,16 @@ use llm_api::spawn_openai_pkg;
 mod contracts;
 
 use crate::context::ContextManager;
+
+// internal state
+struct State {
+    tg_api: Api,
+    tg_worker: Address,
+    wallet: LocalWallet,
+    context_manager: ContextManager,
+    offerings: Offerings,
+    sold: Sold,
+}
 
 /// offerings: (nft_address, nft_id) -> (rules prompt, min_price)
 type Offerings = HashMap<(Address, u64), (String, u64)>;
@@ -43,15 +51,7 @@ wit_bindgen::generate!({
     },
 });
 
-fn handle_message(
-    _our: &Address,
-    api: &Api,
-    tg_worker: &Address,
-    wallet: &mut LocalWallet,
-    context_manager: &mut ContextManager,
-    _offerings: &mut Offerings,
-    _sold: &mut Sold,
-) -> anyhow::Result<()> {
+fn handle_message(_our: &Address, state: &mut State) -> anyhow::Result<()> {
     let message = await_message()?;
 
     match message {
@@ -63,19 +63,19 @@ fn handle_message(
             ref body,
             ..
         } => {
-            return handle_request(source, body, api, tg_worker, wallet, context_manager);
+            return handle_request(source, body, state);
         }
     }
 }
 
-fn handle_request(
-    source: &Address,
-    body: &[u8],
-    api: &Api,
-    tg_worker: &Address,
-    wallet: &mut LocalWallet,
-    context_manager: &mut ContextManager,
-) -> anyhow::Result<()> {
+fn handle_request(source: &Address, body: &[u8], state: &mut State) -> anyhow::Result<()> {
+    let State {
+        tg_api,
+        tg_worker,
+        context_manager,
+        ..
+    } = state;
+
     match serde_json::from_slice(body)? {
         TgResponse::Update(tg_update) => {
             let updates = tg_update.updates;
@@ -120,7 +120,7 @@ fn handle_request(
                             );
                             text
                         };
-                        api.send_message(&params)?;
+                        tg_api.send_message(&params)?;
                     }
                     _ => {
                         println!("got unhandled tg update: {:?}", update);
@@ -135,48 +135,65 @@ fn handle_request(
     Ok(())
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct Initialize {
+    tg_token: String,
+    openai_key: String,
+    private_key: String,
+}
+
+/// Wait for Initialize command to come in either from frontend or from the CLI.
+fn startup_loop(our: &Address) -> State {
+    loop {
+        if let Ok(msg) = await_message() {
+            if msg.source() != our {
+                continue;
+            }
+
+            if let Ok(init) = serde_json::from_slice::<Initialize>(msg.body()) {
+                let Ok(openai_api) = spawn_openai_pkg(our.clone(), &init.openai_key) else {
+                    println!("openAI couldn't boot.");
+                    continue;
+                };
+                let Ok((tg_api, tg_worker)) = init_tg_bot(our.clone(), &init.tg_token, None) else {
+                    println!("tg bot couldn't boot.");
+                    continue;
+                };
+
+                let Ok(wallet) = init.private_key.parse::<LocalWallet>() else {
+                    println!("couldn't parse private key.");
+                    continue;
+                };
+
+                // CLI, UI:
+                // - UI approve() -> send, POST (price, prompt, address, id)
+
+                let state = State {
+                    tg_api,
+                    tg_worker,
+                    wallet,
+                    context_manager: ContextManager::new(openai_api, &NFTS),
+                    offerings: HashMap::new(),
+                    sold: HashMap::new(),
+                };
+                return state;
+            }
+            // add http proud
+            // if msg.source().process() == "http_server:distro:sys" { }
+        }
+    }
+}
+
 call_init!(init);
 
 /// on startup, the auctioneer will need a tg token, open_ai token, and a private key holding the NFTs.
 fn init(our: Address) {
-    println!("give me a tg token!");
+    println!("initialize me!");
 
-    let msg = await_message().unwrap();
-    let token_str = String::from_utf8(msg.body().to_vec()).expect("failed to parse tg token");
-    println!("got tg token: {:?}", token_str);
-    let (api, tg_worker) = init_tg_bot(our.clone(), &token_str, None).unwrap();
-
-    println!("give me an openai key!");
-    let msg = await_message().unwrap();
-    let openai_key = String::from_utf8(msg.body().to_vec()).expect("failed to parse open_ai key");
-    println!("Got openai key: {:?}", openai_key);
-
-    println!("auctioneer: give me a private key!");
-    let msg: Message = await_message().unwrap();
-    let wallet_str =
-        String::from_utf8(msg.body().to_vec()).expect("failed to parse private key as string");
-    let mut wallet = wallet_str
-        .parse::<LocalWallet>()
-        .expect("failed to parse private key");
-
-    let openai_api = spawn_openai_pkg(our.clone(), &openai_key).unwrap();
-
-    let mut contexts = ContextManager::new(openai_api, &NFTS);
-
-    // TODO: Zen: move these in contexts
-    let mut offerings: Offerings = HashMap::new();
-    let mut sold: Sold = HashMap::new();
+    let mut state = startup_loop(&our);
 
     loop {
-        match handle_message(
-            &our,
-            &api,
-            &tg_worker,
-            &mut wallet,
-            &mut contexts,
-            &mut offerings,
-            &mut sold,
-        ) {
+        match handle_message(&our, &mut state) {
             Ok(()) => {}
             Err(e) => {
                 println!("auctioneer: error: {:?}", e);
