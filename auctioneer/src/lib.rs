@@ -148,6 +148,9 @@ fn handle_request(source: &Address, body: &[u8], state: &mut State) -> anyhow::R
 fn startup_loop(our: &Address) -> State {
     loop {
         if let Ok(msg) = await_message() {
+            if msg.source() != our {
+                continue;
+            }
             if msg.source().process == "http_server:distro:sys" {
                 if let Ok(init) = handle_http_message(&our, &msg) {
                     let Ok(openai_api) = spawn_openai_pkg(our.clone(), &init.openai_key) else {
@@ -180,13 +183,6 @@ fn startup_loop(our: &Address) -> State {
                     return state;
                 }
             }
-
-            // TODO: Uncomment or remove?
-            // if msg.source() != our {
-            //     continue;
-            // }
-
-            // TODO: Zen: change default
         }
     }
 }
