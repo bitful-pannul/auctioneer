@@ -418,6 +418,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "frankenstein",
+ "hex",
  "kinode_process_lib",
  "rand",
  "serde",

@@ -1,6 +1,7 @@
 use alloy_primitives::{Address, U256};
 use alloy_signer::{LocalWallet, Signature, SignerSync};
 use alloy_sol_types::SolValue;
+use kinode_process_lib::println;
 
 // todo add list of deploymentss
 
@@ -23,8 +24,9 @@ pub fn create_offer(
         U256::from(valid_until),
         buyer,
     )
-        .abi_encode();
+        .abi_encode_packed();
 
     let sig = wallet.sign_message_sync(&encoded)?;
+
     Ok((uid, sig))
 }

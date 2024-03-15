@@ -95,19 +95,19 @@ fn handle_message(
                                     }
                                     "/sell" => {
                                         // hardcoded test:
-                                        let buyer = EthAddress::from_str(
-                                            "0x4dEdd1563Fc449e845542A2199A8028E65Bb3e34",
+                                        let buyer: EthAddress = EthAddress::from_str(
+                                            "0x1F22784FfA5923465AC9d2D1488AB61a72bcEE65",
                                         )
                                         .unwrap();
 
                                         let ape_contract = EthAddress::from_str(
-                                            "0xfA14e1157F35E1dAD95dC3F822A9d18c40e360E2",
+                                            "0xE29F8038d1A3445Ab22AD1373c65eC0a6E1161a4",
                                         )
                                         .unwrap();
-                                        let ape_id = 506090;
-                                        let price = 2;
+                                        let ape_id = 258;
+                                        let price = 100;
 
-                                        let provider = eth::Provider::new(10, 10);
+                                        let provider = eth::Provider::new(11155111, 10);
                                         let block_number =
                                             provider.get_block_number().map_err(|e| {
                                                 anyhow::anyhow!(
@@ -125,9 +125,12 @@ fn handle_message(
                                             price,
                                             valid_until,
                                         )?;
+
+                                        let sig_formatted = sig.as_bytes();
+                                        let sig = hex::encode(sig_formatted);
                                         let response = format!(
-                                            "Sell offer here:  with uid: {}. Here's the signature: {:?}",
-                                             uid, sig
+                                            "Sell offer here:  with uid: {}. Here's the signature: {:?}, also valid until: {:?}",
+                                             uid, sig, valid_until
                                         );
                                         params.text = response;
                                         api.send_message(&params)?;
