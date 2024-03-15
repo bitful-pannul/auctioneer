@@ -3,7 +3,9 @@ use frankenstein::{
     ChatId, SendMessageParams, TelegramApi, UpdateContent::ChannelPost as TgChannelPost,
     UpdateContent::Message as TgMessage,
 };
-use kinode_process_lib::{await_message, call_init, println, Address, Message};
+use kinode_process_lib::{
+    await_message, call_init, get_blob, http, println, Address, Message,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -24,10 +26,17 @@ use crate::context::ContextManager;
 struct State {
     tg_api: Api,
     tg_worker: Address,
-    wallet: LocalWallet,
+    _wallet: LocalWallet,
     context_manager: ContextManager,
-    offerings: Offerings,
-    sold: Sold,
+    _offerings: Offerings,
+    _sold: Sold,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+struct Initialize {
+    openai_key: String,
+    telegram_bot_api_key: String,
+    private_wallet_address: String,
 }
 
 /// offerings: (nft_address, nft_id) -> (rules prompt, min_price)
@@ -135,53 +144,76 @@ fn handle_request(source: &Address, body: &[u8], state: &mut State) -> anyhow::R
     Ok(())
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct Initialize {
-    tg_token: String,
-    openai_key: String,
-    private_key: String,
-}
-
 /// Wait for Initialize command to come in either from frontend or from the CLI.
 fn startup_loop(our: &Address) -> State {
     loop {
         if let Ok(msg) = await_message() {
-            if msg.source() != our {
-                continue;
+            if msg.source().process == "http_server:distro:sys" {
+                if let Ok(init) = handle_http_message(&our, &msg) {
+                    let Ok(openai_api) = spawn_openai_pkg(our.clone(), &init.openai_key) else {
+                        println!("openAI couldn't boot.");
+                        continue;
+                    };
+                    let Ok((tg_api, tg_worker)) =
+                        init_tg_bot(our.clone(), &init.telegram_bot_api_key, None)
+                    else {
+                        println!("tg bot couldn't boot.");
+                        continue;
+                    };
+
+                    let Ok(wallet) = init.private_wallet_address.parse::<LocalWallet>() else {
+                        println!("couldn't parse private key.");
+                        continue;
+                    };
+
+                    // CLI, UI:
+                    // - UI approve() -> send, POST (price, prompt, address, id)
+
+                    let state = State {
+                        tg_api,
+                        tg_worker,
+                        _wallet: wallet,
+                        context_manager: ContextManager::new(openai_api, &NFTS),
+                        _offerings: HashMap::new(),
+                        _sold: HashMap::new(),
+                    };
+                    return state;
+                }
             }
 
-            if let Ok(init) = serde_json::from_slice::<Initialize>(msg.body()) {
-                let Ok(openai_api) = spawn_openai_pkg(our.clone(), &init.openai_key) else {
-                    println!("openAI couldn't boot.");
-                    continue;
-                };
-                let Ok((tg_api, tg_worker)) = init_tg_bot(our.clone(), &init.tg_token, None) else {
-                    println!("tg bot couldn't boot.");
-                    continue;
-                };
+            // TODO: Uncomment or remove?
+            // if msg.source() != our {
+            //     continue;
+            // }
 
-                let Ok(wallet) = init.private_key.parse::<LocalWallet>() else {
-                    println!("couldn't parse private key.");
-                    continue;
-                };
-
-                // CLI, UI:
-                // - UI approve() -> send, POST (price, prompt, address, id)
-
-                let state = State {
-                    tg_api,
-                    tg_worker,
-                    wallet,
-                    context_manager: ContextManager::new(openai_api, &NFTS),
-                    offerings: HashMap::new(),
-                    sold: HashMap::new(),
-                };
-                return state;
-            }
-            // add http proud
-            // if msg.source().process() == "http_server:distro:sys" { }
+            // TODO: Zen: change default
         }
     }
+}
+
+fn handle_http_message(_our: &Address, message: &Message) -> anyhow::Result<Initialize> {
+    let server_request = http::HttpServerRequest::from_bytes(message.body())?;
+    let http_request = server_request
+        .request()
+        .ok_or_else(|| anyhow::anyhow!("Request not found"))?;
+
+    if http_request.method().unwrap() != http::Method::PUT {
+        http::send_response(
+            http::StatusCode::NOT_FOUND,
+            None,
+            b"Path not found".to_vec(),
+        );
+        return Err(anyhow::anyhow!("Invalid method"));
+    }
+
+    let body = get_blob().ok_or_else(|| anyhow::anyhow!("Blob not found"))?;
+
+    let init = serde_json::from_slice::<Initialize>(&body.bytes).map_err(|e| {
+        println!("Error parsing configuration: {:?}", e);
+        anyhow::Error::new(e)
+    })?;
+    println!("Received configuration: OpenAI API Key: {}, Telegram Bot API Key: {}, Private Wallet Address: {}", init.openai_key, init.telegram_bot_api_key, init.private_wallet_address);
+    Ok(init)
 }
 
 call_init!(init);
@@ -189,6 +221,9 @@ call_init!(init);
 /// on startup, the auctioneer will need a tg token, open_ai token, and a private key holding the NFTs.
 fn init(our: Address) {
     println!("initialize me!");
+    let _ = http::serve_index_html(&our, "ui", true, false, vec!["/api"]);
+    // http://localhost:8080/auctioneer:auctioneer:template.os/api
+    // That's a mouthful innit
 
     let mut state = startup_loop(&our);
 

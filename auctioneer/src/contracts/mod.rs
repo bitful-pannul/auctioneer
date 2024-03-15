@@ -6,7 +6,7 @@ use alloy_sol_types::SolValue;
 // SEPOLIA + OP mainnet: 0xeB461C6ECB19dce8f3af49dB0f2bD7c9fa3edC8F
 
 /// Create a Sell offer, returning uid and signature buyer can use to transfer NFT out of escrow!
-pub fn create_offer(
+pub fn _create_offer(
     wallet: &LocalWallet,
     nft_address: &Address,
     nft_id: u64,
