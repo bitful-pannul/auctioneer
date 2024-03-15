@@ -6,10 +6,10 @@
         "request_networking": true,
         "request_capabilities": [
             "http_server:distro:sys",
-	    "http_client:distro:sys",
-	    "openai:llm:kinode",
-	    "eth:distro:sys",
-	    "vfs:distro:sys"
+            "http_client:distro:sys",
+            "openai:llm:kinode",
+            "eth:distro:sys",
+            "vfs:distro:sys"
         ],
         "grant_capabilities": [],
         "public": true

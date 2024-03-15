@@ -3,7 +3,7 @@ use kinode_process_lib::{
 };
 use std::str::FromStr;
 
-use crate::llm_types::openai::{ChatParams, ChatRequest, LLMRequest, LLMResponse};
+use crate::llm_types::openai::{ChatParams, ChatRequest, LLMRequest, LLMResponse, Message};
 
 pub fn spawn_openai_pkg(our: Address, openai_key: &str) -> anyhow::Result<OpenaiApi> {
     let openai_pkg_path = format!("{}/pkg/openai.wasm", our.package_id());
@@ -40,7 +40,7 @@ impl OpenaiApi {
         }
     }
 
-    pub fn chat(&self, chat_params: ChatParams) -> anyhow::Result<String> {
+    pub fn chat(&self, chat_params: ChatParams) -> anyhow::Result<Message> {
         let chat_request = ChatRequest {
             params: chat_params,
             api_key: self.openai_key.clone(),
@@ -53,7 +53,7 @@ impl OpenaiApi {
 
         let response = LLMResponse::parse(msg.body())?;
         if let LLMResponse::Chat(chat) = response {
-            Ok(chat.to_chat_response())
+            Ok(chat.to_message_response())
         } else {
             return Err(anyhow::Error::msg("Error querying OpenAI: wrong result"));
         }
