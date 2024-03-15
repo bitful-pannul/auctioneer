@@ -3,9 +3,7 @@ use frankenstein::{
     ChatId, SendMessageParams, TelegramApi, UpdateContent::ChannelPost as TgChannelPost,
     UpdateContent::Message as TgMessage,
 };
-use kinode_process_lib::{
-    await_message, call_init, get_blob, http, println, Address, Message,
-};
+use kinode_process_lib::{await_message, call_init, get_blob, http, println, Address, Message};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -32,11 +30,12 @@ struct State {
     _sold: Sold,
 }
 
-#[derive(Serialize, Deserialize, Default)]
-struct Initialize {
+#[derive(Serialize, Deserialize, Default, Debug)]
+struct InitialConfig {
     openai_key: String,
     telegram_bot_api_key: String,
     private_wallet_address: String,
+    chain_id: String,
 }
 
 /// offerings: (nft_address, nft_id) -> (rules prompt, min_price)
@@ -152,19 +151,21 @@ fn startup_loop(our: &Address) -> State {
                 continue;
             }
             if msg.source().process == "http_server:distro:sys" {
-                if let Ok(init) = handle_http_message(&our, &msg) {
-                    let Ok(openai_api) = spawn_openai_pkg(our.clone(), &init.openai_key) else {
+                if let Ok(initial_config) = get_initial_config(&our, &msg) {
+                    let Ok(openai_api) = spawn_openai_pkg(our.clone(), &initial_config.openai_key)
+                    else {
                         println!("openAI couldn't boot.");
                         continue;
                     };
                     let Ok((tg_api, tg_worker)) =
-                        init_tg_bot(our.clone(), &init.telegram_bot_api_key, None)
+                        init_tg_bot(our.clone(), &initial_config.telegram_bot_api_key, None)
                     else {
                         println!("tg bot couldn't boot.");
                         continue;
                     };
 
-                    let Ok(wallet) = init.private_wallet_address.parse::<LocalWallet>() else {
+                    let Ok(wallet) = initial_config.private_wallet_address.parse::<LocalWallet>()
+                    else {
                         println!("couldn't parse private key.");
                         continue;
                     };
@@ -187,7 +188,7 @@ fn startup_loop(our: &Address) -> State {
     }
 }
 
-fn handle_http_message(_our: &Address, message: &Message) -> anyhow::Result<Initialize> {
+fn get_initial_config(_our: &Address, message: &Message) -> anyhow::Result<InitialConfig> {
     let server_request = http::HttpServerRequest::from_bytes(message.body())?;
     let http_request = server_request
         .request()
@@ -204,12 +205,12 @@ fn handle_http_message(_our: &Address, message: &Message) -> anyhow::Result<Init
 
     let body = get_blob().ok_or_else(|| anyhow::anyhow!("Blob not found"))?;
 
-    let init = serde_json::from_slice::<Initialize>(&body.bytes).map_err(|e| {
+    let initial_config = serde_json::from_slice::<InitialConfig>(&body.bytes).map_err(|e| {
         println!("Error parsing configuration: {:?}", e);
         anyhow::Error::new(e)
     })?;
-    println!("Received configuration: OpenAI API Key: {}, Telegram Bot API Key: {}, Private Wallet Address: {}", init.openai_key, init.telegram_bot_api_key, init.private_wallet_address);
-    Ok(init)
+    println!("Received initialconfig: {:?}", initial_config);
+    Ok(initial_config)
 }
 
 call_init!(init);
