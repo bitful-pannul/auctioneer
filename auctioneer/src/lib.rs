@@ -131,6 +131,11 @@ fn get_initial_config(_our: &Address, message: &Message) -> anyhow::Result<Initi
 fn handle_message(_our: &Address, state: &mut State) -> anyhow::Result<()> {
     let message = await_message()?;
 
+    // TODO: Let's not handle incoming http requests afterwards for nowgi
+    if message.source().process == "http_server:distro:sys" {
+        return Ok(());
+    }
+
     match message {
         Message::Response { .. } => {
             return Err(anyhow::anyhow!("unexpected Response: {:?}", message));
@@ -152,11 +157,6 @@ fn handle_request(source: &Address, body: &[u8], state: &mut State) -> anyhow::R
         context_manager,
         ..
     } = state;
-
-    // TODO: Let's not handle incoming http requests afterwards for now
-    if msg.source().process == "http_server:distro:sys" {
-        return Ok(());
-    }
 
     match serde_json::from_slice(body)? {
         TgResponse::Update(tg_update) => {
