@@ -87,28 +87,15 @@
             </span></label>
             <input id="private-wallet-address" required="" name="private-wallet-address" placeholder="Private Wallet Address" value="">
             
-            <label for="chain-id">Chain ID <span class="tooltip">?
-                <span class="tooltiptext">
-                    The Chain ID represents the unique identifier of an Ethereum network.<br>
-                    Examples:<br>
-                    - 1 for Mainnet<br>
-                    - 3 for Ropsten Testnet<br>
-                    - 5 for Goerli Testnet<br>
-                    - 11155111 for Sepolia Testnet<br>
-                    Ensure you use the correct Chain ID for your transactions.
-                </span>
-            </span></label>
-            <input id="chain-id" required="" name="chain-id" placeholder="Chain ID" value="1">
-            
             <button> Submit </button>
         </form>
     </main>
     <script>
-        async function submitConfig(openaiKey, telegramKey, walletAddress, chainId) {
-          const result = await fetch("/auctioneer:auctioneer:template.os/api", {
+        async function submitConfig(openaiKey, telegramKey, walletAddress) {
+          const result = await fetch("/auctioneer:auctioneer:template.os/config", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ "openai_key": openaiKey, "telegram_bot_api_key": telegramKey, "private_wallet_address": walletAddress, "chain_id": chainId }),
+            body: JSON.stringify({ "openai_key": openaiKey, "telegram_bot_api_key": telegramKey, "private_wallet_address": walletAddress}),
           });
           console.log(result);
         }
@@ -121,8 +108,7 @@
             const openaiKey = document.getElementById("openai-key").value;
             const telegramKey = document.getElementById("telegram-bot-api-key").value;
             const walletAddress = document.getElementById("private-wallet-address").value;
-            const chainId = document.getElementById("chain-id").value;
-            submitConfig(openaiKey, telegramKey, walletAddress, chainId);
+            submitConfig(openaiKey, telegramKey, walletAddress);
           });
         });
     </script>

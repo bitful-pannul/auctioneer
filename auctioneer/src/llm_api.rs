@@ -2,6 +2,7 @@ use kinode_process_lib::{
     our_capabilities, spawn, Address, OnExit, ProcessId, Request,
 };
 use std::str::FromStr;
+use serde::{Serialize, Deserialize};
 
 use crate::llm_types::openai::{ChatParams, ChatRequest, LLMRequest, LLMResponse, Message};
 
@@ -27,6 +28,7 @@ pub fn spawn_openai_pkg(our: Address, openai_key: &str) -> anyhow::Result<Openai
     Ok(OpenaiApi::new(openai_key.to_string(), worker_address))
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct OpenaiApi {
     openai_key: String,
     openai_worker: Address,

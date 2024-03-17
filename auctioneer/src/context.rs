@@ -4,6 +4,7 @@ use crate::llm_types::openai::Message;
 use kinode_process_lib::println;
 use std::collections::HashMap;
 use std::collections::VecDeque;
+use serde::{Serialize, Deserialize};
 
 /// The maximum number of messages to keep in the chat history buffer
 const BUFFER_CAPACITY: usize = 4;
@@ -13,13 +14,14 @@ const SELLING_PASSKEY: &str = "SOLD <name_of_item> for <amount> ETH!";
 
 type Contexts = HashMap<i64, Context>;
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ContextManager {
     nft_listings: HashMap<i64, NFTListing>,
     contexts: Contexts,
     openai_api: OpenaiApi,
 }
 
-#[derive(Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct Context {
     pub nfts: HashMap<i64, NFTData>,
     pub buyer_address: Option<String>,
@@ -27,24 +29,25 @@ struct Context {
     pub sold_nfts: Vec<String>,
 }
 
-#[derive(Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct NFTData {
     pub listing: NFTListing,
     pub state: NFTState,
 }
 
-#[derive(Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct NFTListing {
     pub name: String,
     pub min_price: f32,
 }
 
-#[derive(Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct NFTState {
     pub highest_bid: f32,
     pub tentative_sold: bool,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
 enum AuctioneerCommand {
     /// Tentative sell is when the user has said they've sold an NFT, but we're not selling unless there's a buyer address
     TentativeSell(SoldCommand),
@@ -53,7 +56,13 @@ enum AuctioneerCommand {
     Empty,
 }
 
-#[derive(Debug)]
+impl Default for AuctioneerCommand {
+    fn default() -> Self {
+        AuctioneerCommand::Empty
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SoldCommand {
     nft_id: i64,
     _amount: f32,
@@ -343,7 +352,7 @@ impl Context {
     }
 }
 
-#[derive(Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct Buffer<T> {
     capacity: usize,
     buffer: VecDeque<T>,

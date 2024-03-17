@@ -3,7 +3,9 @@ use frankenstein::{
     ChatId, SendMessageParams, TelegramApi, UpdateContent::ChannelPost as TgChannelPost,
     UpdateContent::Message as TgMessage,
 };
-use kinode_process_lib::{await_message, call_init, get_blob, http, println, Address, Message};
+use kinode_process_lib::{
+    await_message, call_init, get_blob, get_state, http, println, set_state, Address, Message,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -20,22 +22,27 @@ mod contracts;
 
 use crate::context::ContextManager;
 
-// internal state
-struct State {
-    tg_api: Api,
-    tg_worker: Address,
-    _wallet: LocalWallet,
-    context_manager: ContextManager,
-    _offerings: Offerings,
-    _sold: Sold,
-}
-
-#[derive(Serialize, Deserialize, Default, Debug)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone)]
 struct InitialConfig {
     openai_key: String,
     telegram_bot_api_key: String,
     private_wallet_address: String,
-    chain_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct State {
+    pub config: InitialConfig,
+    pub context_manager: ContextManager,
+}
+
+struct Session {
+    tg_api: Api,
+    tg_worker: Address,
+    _wallet: LocalWallet,
+    context_manager: ContextManager,
+    // TODO: Zena: Offerings and sold should probably go into context_manager.
+    _offerings: Offerings,
+    _sold: Sold,
 }
 
 /// offerings: (nft_address, nft_id) -> (rules prompt, min_price)
@@ -59,48 +66,70 @@ wit_bindgen::generate!({
     },
 });
 
-fn startup_loop(our: &Address) -> State {
+fn startup_loop(our: &Address) -> InitialConfig {
     loop {
-        if let Ok(msg) = await_message() {
-            if msg.source().node != our.node {
-                continue;
-            }
-            if msg.source().process == "http_server:distro:sys" {
-                if let Ok(initial_config) = get_initial_config(&our, &msg) {
-                    let Ok(openai_api) = spawn_openai_pkg(our.clone(), &initial_config.openai_key)
-                    else {
-                        println!("openAI couldn't boot.");
-                        continue;
-                    };
-                    let Ok((tg_api, tg_worker)) =
-                        init_tg_bot(our.clone(), &initial_config.telegram_bot_api_key, None)
-                    else {
-                        println!("tg bot couldn't boot.");
-                        continue;
-                    };
-
-                    let Ok(wallet) = initial_config.private_wallet_address.parse::<LocalWallet>()
-                    else {
-                        println!("couldn't parse private key.");
-                        continue;
-                    };
-
-                    // CLI, UI:
-                    // - UI approve() -> send, POST (price, prompt, address, id)
-
-                    let state = State {
-                        tg_api,
-                        tg_worker,
-                        _wallet: wallet,
-                        context_manager: ContextManager::new(openai_api, &NFTS),
-                        _offerings: HashMap::new(),
-                        _sold: HashMap::new(),
-                    };
-                    return state;
-                }
-            }
+        let Ok(msg) = await_message() else {
+            continue;
+        };
+        if msg.source().node != our.node || msg.source().process != "http_server:distro:sys" {
+            continue;
+        }
+        if let Ok(initial_config) = get_initial_config(&our, &msg) {
+            return initial_config;
         }
     }
+}
+
+fn initialize_or_restore_session(our: &Address) -> anyhow::Result<Session> {
+    let (initial_config, context_manager_opt) = if let Some(state_bytes) = get_state() {
+        let state: State = match bincode::deserialize(&state_bytes) {
+            Ok(state) => state,
+            Err(e) => {
+                // We panic here because we don't want to loop if there's faulty state.
+                panic!("Failed to deserialize state: {:?}", e)
+            }
+        };
+        (state.config, Some(state.context_manager))
+    } else {
+        let initial_config = startup_loop(our);
+        (initial_config, None)
+    };
+
+    let Ok(openai_api) = spawn_openai_pkg(our.clone(), &initial_config.openai_key) else {
+        return Err(anyhow::anyhow!("openAI couldn't boot."));
+    };
+    let Ok((tg_api, tg_worker)) =
+        init_tg_bot(our.clone(), &initial_config.telegram_bot_api_key, None)
+    else {
+        return Err(anyhow::anyhow!("tg bot couldn't boot."));
+    };
+
+    let Ok(wallet) = initial_config.private_wallet_address.parse::<LocalWallet>() else {
+        return Err(anyhow::anyhow!("couldn't parse private key."));
+    };
+
+    let context_manager = match context_manager_opt {
+        Some(cm) => cm,
+        None => {
+            let cm = ContextManager::new(openai_api, &NFTS);
+            let state = State {
+                config: initial_config.clone(),
+                context_manager: cm.clone(),
+            };
+            let serialized_state = bincode::serialize(&state).expect("Failed to serialize state");
+            set_state(&serialized_state);
+            cm
+        }
+    };
+
+    Ok(Session {
+        tg_api,
+        tg_worker,
+        _wallet: wallet,
+        context_manager,
+        _offerings: HashMap::new(),
+        _sold: HashMap::new(),
+    })
 }
 
 fn get_initial_config(_our: &Address, message: &Message) -> anyhow::Result<InitialConfig> {
@@ -124,11 +153,12 @@ fn get_initial_config(_our: &Address, message: &Message) -> anyhow::Result<Initi
         println!("Error parsing configuration: {:?}", e);
         anyhow::Error::new(e)
     })?;
-    println!("Received initialconfig: {:?}", initial_config);
+
+    // TODO: Zen: Persist initial config or retrieve it
     Ok(initial_config)
 }
 
-fn handle_message(_our: &Address, state: &mut State) -> anyhow::Result<()> {
+fn handle_message(_our: &Address, session: &mut Session) -> anyhow::Result<()> {
     let message = await_message()?;
 
     // TODO: Let's not handle incoming http requests afterwards for nowgi
@@ -145,18 +175,18 @@ fn handle_message(_our: &Address, state: &mut State) -> anyhow::Result<()> {
             ref body,
             ..
         } => {
-            return handle_request(source, body, state);
+            return handle_request(source, body, session);
         }
     }
 }
 
-fn handle_request(source: &Address, body: &[u8], state: &mut State) -> anyhow::Result<()> {
-    let State {
+fn handle_request(source: &Address, body: &[u8], session: &mut Session) -> anyhow::Result<()> {
+    let Session {
         tg_api,
         tg_worker,
         context_manager,
         ..
-    } = state;
+    } = session;
 
     match serde_json::from_slice(body)? {
         TgResponse::Update(tg_update) => {
@@ -222,16 +252,23 @@ call_init!(init);
 /// on startup, the auctioneer will need a tg token, open_ai token, and a private key holding the NFTs.
 fn init(our: Address) {
     println!("initialize me!");
-    let _ = http::serve_index_html(&our, "ui", true, false, vec!["/api"]);
-    // http://localhost:8080/auctioneer:auctioneer:template.os/api
+    let _ = http::serve_index_html(&our, "ui", true, false, vec!["/config"]);
+    // http://localhost:8080/auctioneer:auctioneer:template.os/config
     // That's a mouthful innit
 
-    let mut state = startup_loop(&our);
+    let mut session = loop {
+        match initialize_or_restore_session(&our) {
+            Ok(session) => break session,
+            Err(e) => {
+                println!("Failed to initialize or restore session: {:?}", e);
+            }
+        }
+    };
 
-    println!("Startup loop escape velocity!");
+    println!("Session loaded successfully!");
 
     loop {
-        match handle_message(&our, &mut state) {
+        match handle_message(&our, &mut session) {
             Ok(()) => {}
             Err(e) => {
                 println!("auctioneer: error: {:?}", e);

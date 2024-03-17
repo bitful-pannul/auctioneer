@@ -70,6 +70,7 @@ pub fn init_tg_bot(
     Ok((api, worker_address))
 }
 
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Api {
     pub api_url: String,
     pub our: Address,
