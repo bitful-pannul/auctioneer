@@ -258,7 +258,14 @@ fn init(our: Address) {
 
     let mut session = loop {
         match initialize_or_restore_session(&our) {
-            Ok(session) => break session,
+            Ok(session) => {
+                http::send_response(
+                    http::StatusCode::OK,
+                    None,
+                    b"success".to_vec(),
+                );
+                break session
+            }
             Err(e) => {
                 println!("Failed to initialize or restore session: {:?}", e);
             }

@@ -97,7 +97,12 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ "openai_key": openaiKey, "telegram_bot_api_key": telegramKey, "private_wallet_address": walletAddress}),
           });
-          console.log(result);
+          const data = await result.json();
+          if (data.message === "success") {
+            window.location.href = "/nft-manager.html"; // Redirect to NFT Manager page on success
+          } else {
+            console.error("Failed to submit configuration:", data);
+          }
         }
 
         document.addEventListener("DOMContentLoaded", () => {
