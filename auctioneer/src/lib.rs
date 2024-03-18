@@ -1,4 +1,5 @@
 use alloy_signer::LocalWallet;
+use context::NFTKey;
 use frankenstein::{
     ChatId, SendMessageParams, TelegramApi, UpdateContent::ChannelPost as TgChannelPost,
     UpdateContent::Message as TgMessage,
@@ -90,7 +91,6 @@ wit_bindgen::generate!({
     },
 });
 
-
 fn config(body_bytes: &[u8]) -> Option<State> {
     let initial_config = serde_json::from_slice::<InitialConfig>(body_bytes).ok()?;
     let _ = http::send_response(
@@ -106,7 +106,7 @@ fn config(body_bytes: &[u8]) -> Option<State> {
         Some(mut state) => {
             state.config = initial_config;
             return Some(state);
-        },
+        }
         None => {
             let state = State {
                 config: initial_config,
@@ -115,7 +115,7 @@ fn config(body_bytes: &[u8]) -> Option<State> {
             let serialized_state = bincode::serialize(&state).expect("Failed to serialize state");
             set_state(&serialized_state);
             return Some(state);
-        },
+        }
     }
 }
 
@@ -125,7 +125,7 @@ fn add_nft(body_bytes: &[u8]) -> Option<State> {
         Err(e) => {
             println!("Failed to parse AddNFTArgs: {:?}", e);
             return None;
-        },
+        }
     };
     let Some(mut state) = State::fetch() else {
         println!("Failed to fetch state, need to have one first before adding NFTs");
@@ -134,18 +134,73 @@ fn add_nft(body_bytes: &[u8]) -> Option<State> {
     let context_manager = &mut state.context_manager;
     context_manager.add_nft(add_nft_args);
 
+    let nft_listing_keys: Vec<_> = context_manager
+        .nft_listings
+        .keys()
+        .map(|key| format!("{}:{}", key.nft_id, key.chain_id))
+        .collect();
+    let nft_listing_values: Vec<_> = context_manager.nft_listings.values().cloned().collect();
+    let response_body = serde_json::json!({
+        "message": "success",
+        "nft_listings_keys": nft_listing_keys,
+        "nft_listings_values": nft_listing_values,
+    })
+    .to_string();
+
     let _ = http::send_response(
         http::StatusCode::OK,
         Some(HashMap::from([(
             "Content-Type".to_string(),
             "application/json".to_string(),
         )])),
-        b"{\"message\": \"success\"}".to_vec(),
+        response_body.as_bytes().to_vec(),
     );
 
     set_state(&bincode::serialize(&state).expect("Failed to serialize state"));
 
-    return Some(state); 
+    return Some(state);
+}
+
+fn remove_nft(body_bytes: &[u8]) -> Option<State> {
+    let nft_key: NFTKey = match serde_json::from_slice(body_bytes) {
+        Ok(args) => args,
+        Err(e) => {
+            println!("Failed to parse AddNFTArgs: {:?}", e);
+            return None;
+        }
+    };
+    let Some(mut state) = State::fetch() else {
+        println!("Failed to fetch state, need to have one first before adding NFTs");
+        return None;
+    };
+    let context_manager = &mut state.context_manager;
+    context_manager.remove_nft(&nft_key);
+
+    let nft_listing_keys: Vec<_> = context_manager
+        .nft_listings
+        .keys()
+        .map(|key| format!("{}:{}", key.nft_id, key.chain_id))
+        .collect();
+    let nft_listing_values: Vec<_> = context_manager.nft_listings.values().cloned().collect();
+    let response_body = serde_json::json!({
+        "message": "success",
+        "nft_listings_keys": nft_listing_keys,
+        "nft_listings_values": nft_listing_values,
+    })
+    .to_string();
+
+    let _ = http::send_response(
+        http::StatusCode::OK,
+        Some(HashMap::from([(
+            "Content-Type".to_string(),
+            "application/json".to_string(),
+        )])),
+        response_body.as_bytes().to_vec(),
+    );
+
+    set_state(&bincode::serialize(&state).expect("Failed to serialize state"));
+
+    return Some(state);
 }
 
 fn handle_internal_messages(
@@ -219,7 +274,8 @@ fn _handle_internal_messages(
                             context_manager.clear(msg.chat.id);
                             "Reset succesful!".to_string()
                         } else {
-                            let (text, sold) = context_manager.chat(msg.chat.id, &text, &openai_api)?;
+                            let (text, sold) =
+                                context_manager.chat(msg.chat.id, &text, &openai_api)?;
                             println!("Sale has been received with {:?}", sold);
                             println!(
                                 "The message list is {:?}",
@@ -244,7 +300,6 @@ fn _handle_internal_messages(
 
 call_init!(init);
 
-
 fn fetch_status(our: &Address, msg: &Message) -> Option<State> {
     if msg.source().node != our.node {
         return None;
@@ -265,7 +320,11 @@ fn fetch_status(our: &Address, msg: &Message) -> Option<State> {
     state_
 }
 
-fn modify_session(our: &Address, session: &mut Option<Session>, state: Option<State>) -> anyhow::Result<()> {
+fn modify_session(
+    our: &Address,
+    session: &mut Option<Session>,
+    state: Option<State>,
+) -> anyhow::Result<()> {
     if let Some(state) = state {
         let Ok(openai_api) = spawn_openai_pkg(our.clone(), &state.config.openai_key) else {
             return Err(anyhow::anyhow!("openAI couldn't boot."));
@@ -297,13 +356,9 @@ fn handle_http_messages(our: &Address, message: &Message) -> Option<State> {
         Message::Response { .. } => {
             return None;
         }
-        Message::Request {
-            ref body,
-            ..
-        } => {
+        Message::Request { ref body, .. } => {
             let server_request = http::HttpServerRequest::from_bytes(body).ok()?;
-            let http_request = server_request
-                .request()?;
+            let http_request = server_request.request()?;
 
             let body = get_blob()?;
             let bound_path = http_request.bound_path(Some(PROCESS_ID));
@@ -316,6 +371,9 @@ fn handle_http_messages(our: &Address, message: &Message) -> Option<State> {
                 }
                 "/addnft" => {
                     return add_nft(&body.bytes);
+                }
+                "/removenft" => {
+                    return remove_nft(&body.bytes);
                 }
                 _ => {
                     return None;
@@ -333,7 +391,7 @@ fn init(our: Address) {
         "ui",
         true,
         false,
-        vec!["/", "/status", "/config", "/addnft"],
+        vec!["/", "/status", "/config", "/addnft", "/removenft"],
     );
     let mut session: Option<Session> = None;
     loop {

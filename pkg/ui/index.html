@@ -65,20 +65,24 @@
       border-radius: 8px;
       box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
       display: flex;
-      flex-direction: column; /* Align fields vertically */
-      align-items: center; /* Center-align the content */
+      flex-direction: column;
+      /* Align fields vertically */
+      align-items: center;
+      /* Center-align the content */
     }
 
     h1 {
       font-size: 24px;
       color: #333;
-      align-self: flex-start; /* Align title to the start */
+      align-self: flex-start;
+      /* Align title to the start */
     }
 
     label {
       font-weight: 500;
       margin-top: 15px;
-      align-self: flex-start; /* Align labels to the start */
+      align-self: flex-start;
+      /* Align labels to the start */
     }
 
     input[type="text"],
@@ -112,6 +116,15 @@
       main {
         padding: 15px;
       }
+    }
+    .nft-listing {
+      cursor: pointer;
+      margin-bottom: 10px;
+      padding: 10px;
+      border: 1px solid #ccc;
+    }
+    .nft-listing.selected {
+      border-color: #007bff;
     }
   </style>
 </head>
@@ -206,7 +219,7 @@
             Give instructions on what the bot should do to sell it. For example, being greedy vs lenient.
           </span>
         </span></label>
-      <textarea id="sell-prompt" required="" name="sell-prompt" placeholder="Custom Selling Instructions"></textarea>
+      <textarea id="sell-prompt" name="sell-prompt" placeholder="Custom Selling Instructions"></textarea>
 
       <label for="min-price">Min Price <span class="tooltip">?
           <span class="tooltiptext">
@@ -218,12 +231,12 @@
 
       <button type="submit">Submit NFT</button>
     </form>
+    <div id="nft-listings"></div>
+    <button id="remove-nft">Remove</button>
   </main>
   <script>
     window.onload = async function () {
-      console.log("Fetching status on window load."); // Added for debugging
       await fetchStatus();
-      console.log("Status fetched successfully."); // Added for debugging
     }
 
     async function fetchStatus() {
@@ -235,11 +248,11 @@
       const data = await response.json();
       if (data.status === "config") {
         document.getElementById("initial-config").style.display = "block";
-        document.getElementById("nft-manager").style.display = "none"; // Ensure NFT Manager is hidden when showing config
+        document.getElementById("nft-manager").style.display = "none"; 
         prepareConfigFormEventListener();
       } else if (data.status === "manage-nfts") {
         document.getElementById("nft-manager").style.display = "block";
-        document.getElementById("initial-config").style.display = "none"; // Ensure config is hidden when showing NFT Manager
+        document.getElementById("initial-config").style.display = "none";
       } else {
         console.error("Unknown status:", data);
       }
@@ -252,9 +265,9 @@
         body: JSON.stringify({ "openai_key": openaiKey, "telegram_bot_api_key": telegramKey, "private_wallet_address": walletAddress }),
       });
       const data = await result.json();
-      console.debug("Response message:", data.message); // Debugging data.message
-      document.getElementById("initial-config").style.display = "none"; // Hide initial configuration form
-      document.getElementById("nft-manager").style.display = "block"; // Display NFT Manager view
+      console.debug("Response message:", data.message); 
+      document.getElementById("initial-config").style.display = "none"; 
+      document.getElementById("nft-manager").style.display = "block"; 
     }
 
     function prepareConfigFormEventListener() {
@@ -278,12 +291,12 @@
       const nftDescription = document.getElementById("nft-description").value;
       const sellPrompt = document.getElementById("sell-prompt").value;
       const minPrice = document.getElementById("min-price").value;
-
+    
       if (!nftName || !nftAddress || !nftId || !chainId || !minPrice) {
         alert("Please fill out all fields before submitting.");
         return;
       }
-
+    
       fetch("/auctioneer:auctioneer:template.os/addnft", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -299,16 +312,74 @@
       })
         .then(response => response.json())
         .then(data => {
-          console.log("NFT submission successful:", data);
-          // Handle success response, e.g., showing a success message or redirecting
+          displayNFTs(data); 
         })
         .catch(error => {
           console.error("Failed to submit NFT:", error);
-          // Handle error, e.g., showing an error message
         });
     }
+
+    function displayNFTs(data) {
+      const listingsContainer = document.getElementById('nft-listings');
+      listingsContainer.innerHTML = ''; 
+    
+      data.nft_listings_keys.forEach((key, index) => {
+        const nft = data.nft_listings_values[index];
+        const nftElement = document.createElement('div');
+        nftElement.className = 'nft-listing';
+        nftElement.dataset.key = key; 
+        nftElement.innerHTML = `
+          <div class="nft-content">
+            <p><strong>Name:</strong> ${nft.name}</p>
+            <p><strong>Address:</strong> ${nft.address}</p>
+            <p><strong>Min Price:</strong> ${nft.min_price.toFixed(2)}</p>
+            <p><strong>Description:</strong> ${nft.description || 'N/A'}</p>
+            <p><strong>Custom Prompt:</strong> ${nft.custom_prompt || 'N/A'}</p>
+          </div>
+        `;
+        nftElement.addEventListener('click', () => {
+          document.querySelectorAll('.nft-listing').forEach(el => el.classList.remove('selected'));
+          nftElement.classList.add('selected');
+          selectedNFTKey = key;
+        });
+    
+        listingsContainer.appendChild(nftElement);
+      });
+    }
+    
+    let selectedNFTKey = null;
+    document.getElementById('nft-listings').addEventListener('click', function (e) {
+      if (e.target.classList.contains('nft-listing')) {
+        document.querySelectorAll('.nft-listing').forEach(el => el.classList.remove('selected'));
+        e.target.classList.add('selected');
+        selectedNFTKey = e.target.dataset.key;
+      }
+    });
+
+    document.getElementById('remove-nft').addEventListener('click', async function () {
+      if (!selectedNFTKey) {
+        alert('Please select an NFT to remove.');
+        return;
+      }
+      const [nftId, chainId] = selectedNFTKey.split(':');
+      const removeEndpoint = '/auctioneer:auctioneer:template.os/removenft'; 
+      await fetch(removeEndpoint, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nft_id: parseInt(nftId, 10),
+          chain_id: parseInt(chainId, 10)
+        }),
+      })
+      .then(response => response.json())
+      .then(data => {
+        displayNFTs(data);
+      })
+      .catch(error => {
+        console.error("Failed to remove NFT:", error);
+      });
+    });
   </script>
 </body>
 
 </html>
-

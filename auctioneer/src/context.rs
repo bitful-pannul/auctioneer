@@ -18,7 +18,7 @@ type Contexts = HashMap<ChatId, Context>;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ContextManager {
-    nft_listings: HashMap<NFTKey, NFTListing>,
+    pub nft_listings: HashMap<NFTKey, NFTListing>,
     contexts: Contexts,
 }
 
@@ -31,7 +31,7 @@ struct Context {
 }
 
 #[derive(Copy, Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
-struct NFTKey {
+pub struct NFTKey {
     pub nft_id: u64,
     pub chain_id: u64,
 }
@@ -43,7 +43,7 @@ struct NFTData {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct NFTListing {
+pub struct NFTListing {
     pub name: String,
     pub min_price: f32,
     pub address: String,
@@ -162,13 +162,20 @@ impl ContextManager {
         }
 
         if let Some(ref sold) = sold {
-            self.remove_nft(&sold.nft_key, chat_id);
+            self.remove_nft_for_chat(&sold.nft_key, chat_id);
         }
 
         Ok((text, sold))
     }
 
-    fn remove_nft(&mut self, nft_key: &NFTKey, chat_id: ChatId) {
+    pub fn remove_nft(&mut self, nft_key: &NFTKey) {
+        self.nft_listings.remove(nft_key);
+        for (context_id, value) in self.contexts.iter_mut() {
+            value.nfts.remove(nft_key);
+        }
+    }
+
+    fn remove_nft_for_chat(&mut self, nft_key: &NFTKey, chat_id: ChatId) {
         let name = self
             .nft_listings
             .get(nft_key)
