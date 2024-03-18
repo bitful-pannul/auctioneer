@@ -1,4 +1,5 @@
 use alloy_signer::LocalWallet;
+use context::NFTKey;
 use frankenstein::{
     ChatId, SendMessageParams, TelegramApi, UpdateContent::ChannelPost as TgChannelPost,
     UpdateContent::Message as TgMessage,
@@ -16,17 +17,19 @@ mod context;
 mod llm_types;
 
 mod llm_api;
-use llm_api::spawn_openai_pkg;
+use llm_api::{spawn_openai_pkg, OpenaiApi};
 
 mod contracts;
 
 use crate::context::ContextManager;
 
+const PROCESS_ID: &str = "auctioneer:auctioneer:template.os";
+
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 struct InitialConfig {
-    openai_key: String,
-    telegram_bot_api_key: String,
-    private_wallet_address: String,
+    pub openai_key: String,
+    pub telegram_bot_api_key: String,
+    pub private_wallet_address: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -35,14 +38,36 @@ struct State {
     pub context_manager: ContextManager,
 }
 
+impl State {
+    fn fetch() -> Option<State> {
+        if let Some(state_bytes) = get_state() {
+            bincode::deserialize(&state_bytes).ok()
+        } else {
+            None
+        }
+    }
+}
+
 struct Session {
     tg_api: Api,
     tg_worker: Address,
     _wallet: LocalWallet,
     context_manager: ContextManager,
+    openai_api: OpenaiApi,
     // TODO: Zena: Offerings and sold should probably go into context_manager.
     _offerings: Offerings,
     _sold: Sold,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct AddNFTArgs {
+    pub nft_name: String,
+    pub nft_address: String,
+    pub nft_id: u64,
+    pub chain_id: u64,
+    pub nft_description: Option<String>,
+    pub sell_prompt: Option<String>,
+    pub min_price: f32,
 }
 
 /// offerings: (nft_address, nft_id) -> (rules prompt, min_price)
@@ -66,101 +91,125 @@ wit_bindgen::generate!({
     },
 });
 
-fn receive_config_message(our: &Address) -> InitialConfig {
-    loop {
-        let Ok(msg) = await_message() else {
-            continue;
-        };
-        if msg.source().node != our.node || msg.source().process != "http_server:distro:sys" {
-            continue;
+fn config(body_bytes: &[u8]) -> Option<State> {
+    let initial_config = serde_json::from_slice::<InitialConfig>(body_bytes).ok()?;
+    let _ = http::send_response(
+        http::StatusCode::OK,
+        Some(HashMap::from([(
+            "Content-Type".to_string(),
+            "application/json".to_string(),
+        )])),
+        b"{\"message\": \"success\"}".to_vec(),
+    );
+
+    match State::fetch() {
+        Some(mut state) => {
+            state.config = initial_config;
+            return Some(state);
         }
-        if let Ok(initial_config) = get_initial_config(&our, &msg) {
-            return initial_config;
-        }
-    }
-}
-
-fn initialize_or_restore_session(our: &Address, state: Option<State>) -> anyhow::Result<Session> {
-    let (initial_config, context_manager_opt) = match state {
-        Some(state) => {
-            (state.config, Some(state.context_manager))
-        },
         None => {
-            let initial_config = receive_config_message(our);
-            (initial_config, None)
-        },
-    };
-
-    let Ok(openai_api) = spawn_openai_pkg(our.clone(), &initial_config.openai_key) else {
-        return Err(anyhow::anyhow!("openAI couldn't boot."));
-    };
-    let Ok((tg_api, tg_worker)) =
-        init_tg_bot(our.clone(), &initial_config.telegram_bot_api_key, None)
-    else {
-        return Err(anyhow::anyhow!("tg bot couldn't boot."));
-    };
-
-    let Ok(wallet) = initial_config.private_wallet_address.parse::<LocalWallet>() else {
-        return Err(anyhow::anyhow!("couldn't parse private key."));
-    };
-
-    let context_manager = match context_manager_opt {
-        Some(cm) => cm,
-        None => {
-            let cm = ContextManager::new(openai_api, &NFTS);
             let state = State {
-                config: initial_config.clone(),
-                context_manager: cm.clone(),
+                config: initial_config,
+                context_manager: ContextManager::new(&NFTS),
             };
             let serialized_state = bincode::serialize(&state).expect("Failed to serialize state");
             set_state(&serialized_state);
-            cm
+            return Some(state);
+        }
+    }
+}
+
+fn add_nft(body_bytes: &[u8]) -> Option<State> {
+    let add_nft_args: AddNFTArgs = match serde_json::from_slice(body_bytes) {
+        Ok(args) => args,
+        Err(e) => {
+            println!("Failed to parse AddNFTArgs: {:?}", e);
+            return None;
         }
     };
+    let Some(mut state) = State::fetch() else {
+        println!("Failed to fetch state, need to have one first before adding NFTs");
+        return None;
+    };
+    let context_manager = &mut state.context_manager;
+    context_manager.add_nft(add_nft_args);
 
-    Ok(Session {
-        tg_api,
-        tg_worker,
-        _wallet: wallet,
-        context_manager,
-        _offerings: HashMap::new(),
-        _sold: HashMap::new(),
+    let nft_listing_keys: Vec<_> = context_manager
+        .nft_listings
+        .keys()
+        .map(|key| format!("{}:{}", key.nft_id, key.chain_id))
+        .collect();
+    let nft_listing_values: Vec<_> = context_manager.nft_listings.values().cloned().collect();
+    let response_body = serde_json::json!({
+        "message": "success",
+        "nft_listings_keys": nft_listing_keys,
+        "nft_listings_values": nft_listing_values,
     })
+    .to_string();
+
+    let _ = http::send_response(
+        http::StatusCode::OK,
+        Some(HashMap::from([(
+            "Content-Type".to_string(),
+            "application/json".to_string(),
+        )])),
+        response_body.as_bytes().to_vec(),
+    );
+
+    set_state(&bincode::serialize(&state).expect("Failed to serialize state"));
+
+    return Some(state);
 }
 
-fn get_initial_config(_our: &Address, message: &Message) -> anyhow::Result<InitialConfig> {
-    let server_request = http::HttpServerRequest::from_bytes(message.body())?;
-    let http_request = server_request
-        .request()
-        .ok_or_else(|| anyhow::anyhow!("Request not found"))?;
+fn remove_nft(body_bytes: &[u8]) -> Option<State> {
+    let nft_key: NFTKey = match serde_json::from_slice(body_bytes) {
+        Ok(args) => args,
+        Err(e) => {
+            println!("Failed to parse AddNFTArgs: {:?}", e);
+            return None;
+        }
+    };
+    let Some(mut state) = State::fetch() else {
+        println!("Failed to fetch state, need to have one first before adding NFTs");
+        return None;
+    };
+    let context_manager = &mut state.context_manager;
+    context_manager.remove_nft(&nft_key);
 
-    if http_request.method().unwrap() != http::Method::PUT {
-        http::send_response(
-            http::StatusCode::NOT_FOUND,
-            None,
-            b"Path not found".to_vec(),
-        );
-        return Err(anyhow::anyhow!("Invalid method"));
-    }
+    let nft_listing_keys: Vec<_> = context_manager
+        .nft_listings
+        .keys()
+        .map(|key| format!("{}:{}", key.nft_id, key.chain_id))
+        .collect();
+    let nft_listing_values: Vec<_> = context_manager.nft_listings.values().cloned().collect();
+    let response_body = serde_json::json!({
+        "message": "success",
+        "nft_listings_keys": nft_listing_keys,
+        "nft_listings_values": nft_listing_values,
+    })
+    .to_string();
 
-    let body = get_blob().ok_or_else(|| anyhow::anyhow!("Blob not found"))?;
+    let _ = http::send_response(
+        http::StatusCode::OK,
+        Some(HashMap::from([(
+            "Content-Type".to_string(),
+            "application/json".to_string(),
+        )])),
+        response_body.as_bytes().to_vec(),
+    );
 
-    let initial_config = serde_json::from_slice::<InitialConfig>(&body.bytes).map_err(|e| {
-        println!("Error parsing configuration: {:?}", e);
-        anyhow::Error::new(e)
-    })?;
+    set_state(&bincode::serialize(&state).expect("Failed to serialize state"));
 
-    // TODO: Zen: Persist initial config or retrieve it
-    Ok(initial_config)
+    return Some(state);
 }
 
-fn handle_message(_our: &Address, session: &mut Session) -> anyhow::Result<()> {
-    let message = await_message()?;
-
-    // TODO: Let's not handle incoming http requests afterwards for nowgi
-    if message.source().process == "http_server:distro:sys" {
+fn handle_internal_messages(
+    message: &Message,
+    session: &mut Option<Session>,
+) -> anyhow::Result<()> {
+    let Some(session) = session else {
         return Ok(());
-    }
+    };
 
     match message {
         Message::Response { .. } => {
@@ -171,16 +220,21 @@ fn handle_message(_our: &Address, session: &mut Session) -> anyhow::Result<()> {
             ref body,
             ..
         } => {
-            return handle_request(source, body, session);
+            return _handle_internal_messages(source, body, session);
         }
     }
 }
 
-fn handle_request(source: &Address, body: &[u8], session: &mut Session) -> anyhow::Result<()> {
+fn _handle_internal_messages(
+    source: &Address,
+    body: &[u8],
+    session: &mut Session,
+) -> anyhow::Result<()> {
     let Session {
         tg_api,
         tg_worker,
         context_manager,
+        openai_api,
         ..
     } = session;
 
@@ -220,7 +274,8 @@ fn handle_request(source: &Address, body: &[u8], session: &mut Session) -> anyho
                             context_manager.clear(msg.chat.id);
                             "Reset succesful!".to_string()
                         } else {
-                            let (text, sold) = context_manager.chat(msg.chat.id, &text)?;
+                            let (text, sold) =
+                                context_manager.chat(msg.chat.id, &text, &openai_api)?;
                             println!("Sale has been received with {:?}", sold);
                             println!(
                                 "The message list is {:?}",
@@ -245,63 +300,120 @@ fn handle_request(source: &Address, body: &[u8], session: &mut Session) -> anyho
 
 call_init!(init);
 
+fn fetch_status(our: &Address, msg: &Message) -> Option<State> {
+    if msg.source().node != our.node {
+        return None;
+    }
+    let (state_, status): (Option<State>, &str) = match State::fetch() {
+        Some(state) => (Some(state), "manage-nfts"),
+        None => (None, "config"),
+    };
 
-fn fetch_status(our: &Address) -> Option<State> {
-    loop {
-        let Ok(msg) = await_message() else {
-            continue
+    let Ok(response) = serde_json::to_vec(&serde_json::json!({ "status": status })) else {
+        println!("Failed to serialize status: {:?}", status);
+        return None;
+    };
+
+    let headers = HashMap::from([("Content-Type".to_string(), "application/json".to_string())]);
+    let _ = http::send_response(http::StatusCode::OK, Some(headers), response);
+
+    state_
+}
+
+fn modify_session(
+    our: &Address,
+    session: &mut Option<Session>,
+    state: Option<State>,
+) -> anyhow::Result<()> {
+    if let Some(state) = state {
+        let Ok(openai_api) = spawn_openai_pkg(our.clone(), &state.config.openai_key) else {
+            return Err(anyhow::anyhow!("openAI couldn't boot."));
         };
-        if msg.source().node != our.node || msg.source().process != "http_server:distro:sys" {
-            continue;
-        }
-        let (state, status): (Option<State>, &str) = if let Some(state_bytes) = get_state() {
-            let state: State = match bincode::deserialize(&state_bytes) {
-                Ok(state) => state,
-                Err(_) => panic!("Found a saved state but couldn't deserialize!"),
-            };
-            (Some(state), "manage-nfts")
-        } else {
-            (None, "config")
+        let Ok((tg_api, tg_worker)) =
+            init_tg_bot(our.clone(), &state.config.telegram_bot_api_key, None)
+        else {
+            return Err(anyhow::anyhow!("tg bot couldn't boot."));
         };
 
-        println!("State is {:?}", state);
+        let Ok(wallet) = state.config.private_wallet_address.parse::<LocalWallet>() else {
+            return Err(anyhow::anyhow!("couldn't parse private key."));
+        };
+        *session = Some(Session {
+            tg_api,
+            tg_worker,
+            _wallet: wallet,
+            context_manager: state.context_manager,
+            openai_api,
+            _offerings: HashMap::new(),
+            _sold: HashMap::new(),
+        });
+    }
+    Ok(())
+}
 
-
-        let Ok(response) = serde_json::to_vec(&serde_json::json!({ "status": status })) else {
-            println!("Failed to serialize status: {:?}", status);
+fn handle_http_messages(our: &Address, message: &Message) -> Option<State> {
+    match message {
+        Message::Response { .. } => {
             return None;
-        };
+        }
+        Message::Request { ref body, .. } => {
+            let server_request = http::HttpServerRequest::from_bytes(body).ok()?;
+            let http_request = server_request.request()?;
 
-        println!("Send back the status {:?}", status);
-        let headers = HashMap::from([("Content-Type".to_string(), "application/json".to_string())]);
-        let _ = http::send_response(
-            http::StatusCode::OK,
-            Some(headers),
-            response,
-        );
-
-        return state;
+            let body = get_blob()?;
+            let bound_path = http_request.bound_path(Some(PROCESS_ID));
+            match bound_path {
+                "/status" => {
+                    return fetch_status(our, message);
+                }
+                "/config" => {
+                    return config(&body.bytes);
+                }
+                "/addnft" => {
+                    return add_nft(&body.bytes);
+                }
+                "/removenft" => {
+                    return remove_nft(&body.bytes);
+                }
+                _ => {
+                    return None;
+                }
+            }
+        }
     }
 }
 
 /// on startup, the auctioneer will need a tg token, open_ai token, and a private key holding the NFTs.
 fn init(our: Address) {
     println!("initialize me!");
-    let _ = http::serve_index_html(&our, "ui", true, false, vec!["/status", "/config"]);
-
-    let state = fetch_status(&our);
-    let Ok(mut session) = initialize_or_restore_session(&our, state) else {
-        panic!("Failed to initialize or restore session");
-    };
-
-    println!("Session loaded successfully!");
-
+    let _ = http::serve_index_html(
+        &our,
+        "ui",
+        true,
+        false,
+        vec!["/", "/status", "/config", "/addnft", "/removenft"],
+    );
+    let mut session: Option<Session> = None;
     loop {
-        match handle_message(&our, &mut session) {
-            Ok(()) => {}
-            Err(e) => {
-                println!("auctioneer: error: {:?}", e);
-            }
+        let Ok(message) = await_message() else {
+            continue;
         };
+        if message.source().node != our.node {
+            continue;
+        }
+
+        if message.source().process == "http_server:distro:sys" {
+            let state = handle_http_messages(&our, &message);
+            let _ = modify_session(&our, &mut session, state);
+        } else {
+            match handle_internal_messages(&message, &mut session) {
+                Ok(()) => {}
+                Err(e) => {
+                    println!("auctioneer: error: {:?}", e);
+                }
+            };
+        }
     }
 }
+
+// TODO: Zen: Break away some of the methods into another file

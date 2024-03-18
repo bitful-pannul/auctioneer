@@ -1,10 +1,11 @@
 use crate::llm_api::OpenaiApi;
 use crate::llm_types::openai::ChatParams;
 use crate::llm_types::openai::Message;
+use crate::AddNFTArgs;
 use kinode_process_lib::println;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::collections::VecDeque;
-use serde::{Serialize, Deserialize};
 
 /// The maximum number of messages to keep in the chat history buffer
 const BUFFER_CAPACITY: usize = 4;
@@ -12,21 +13,27 @@ const BUFFER_CAPACITY: usize = 4;
 const ADDRESS_PASSKEY: &str = "Thank you, setting up contract for ";
 const SELLING_PASSKEY: &str = "SOLD <name_of_item> for <amount> ETH!";
 
-type Contexts = HashMap<i64, Context>;
+type ChatId = i64;
+type Contexts = HashMap<ChatId, Context>;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ContextManager {
-    nft_listings: HashMap<i64, NFTListing>,
+    pub nft_listings: HashMap<NFTKey, NFTListing>,
     contexts: Contexts,
-    openai_api: OpenaiApi,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct Context {
-    pub nfts: HashMap<i64, NFTData>,
+    pub nfts: HashMap<NFTKey, NFTData>,
     pub buyer_address: Option<String>,
     chat_history: Buffer<Message>,
     pub sold_nfts: Vec<String>,
+}
+
+#[derive(Copy, Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
+pub struct NFTKey {
+    pub nft_id: u64,
+    pub chain_id: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -36,12 +43,15 @@ struct NFTData {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct NFTListing {
+pub struct NFTListing {
     pub name: String,
     pub min_price: f32,
+    pub address: String,
+    pub description: Option<String>,
+    pub custom_prompt: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 struct NFTState {
     pub highest_bid: f32,
     pub tentative_sold: bool,
@@ -64,20 +74,26 @@ impl Default for AuctioneerCommand {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SoldCommand {
-    nft_id: i64,
+    nft_key: NFTKey,
     _amount: f32,
 }
 
 impl ContextManager {
-    // TODO: Initializing should probably be empty in the long run, this is for testing.
-    pub fn new(openai_api: OpenaiApi, nft_consts: &[(i64, &str, f32); 3]) -> Self {
+    pub fn new(nft_consts: &[(i64, &str, f32); 3]) -> Self {
         let mut nft_listings = HashMap::new();
+        // TODO: Zen: Remove fluffer
         for nft in nft_consts {
             let (id, name, price) = nft;
             nft_listings.insert(
-                *id,
+                NFTKey {
+                    nft_id: *id as u64,
+                    chain_id: 1,
+                },
                 NFTListing {
                     name: name.to_string(),
+                    address: "placeholder for debugging".to_string(),
+                    description: None,
+                    custom_prompt: None,
                     min_price: *price,
                 },
             );
@@ -85,17 +101,45 @@ impl ContextManager {
         Self {
             nft_listings,
             contexts: HashMap::new(),
-            openai_api,
         }
+    }
+
+    pub fn add_nft(&mut self, args: AddNFTArgs) {
+        let AddNFTArgs {
+            nft_name,
+            nft_address,
+            nft_id,
+            chain_id,
+            nft_description,
+            sell_prompt,
+            min_price,
+        } = args;
+        let key = NFTKey { nft_id, chain_id };
+        let listing = NFTListing {
+            name: nft_name,
+            address: nft_address,
+            description: nft_description,
+            custom_prompt: sell_prompt,
+            min_price,
+        };
+        self.nft_listings.insert(key, listing.clone());
+        for context in self.contexts.values_mut() {
+            context.nfts.entry(key.clone()).or_insert_with(|| NFTData {
+                listing: listing.clone(),
+                state: NFTState::default(),
+            });
+        }
+        println!("The list of nft listings is now: {:?}", self.nft_listings);
     }
 
     pub fn chat(
         &mut self,
-        chat_id: i64,
+        chat_id: ChatId,
         text: &str,
+        openai_api: &OpenaiApi,
     ) -> anyhow::Result<(String, Option<SoldCommand>)> {
         let context = Self::upsert_context(&mut self.contexts, self.nft_listings.clone(), chat_id);
-        let message = context.chat(&self.openai_api, text)?;
+        let message = context.chat(openai_api, text)?;
         let mut text = message.content.clone();
 
         context.chat_history.push(message);
@@ -117,23 +161,30 @@ impl ContextManager {
             context.sold_nfts.clear();
         }
 
-        if let Some(sold) = &sold {
-            self.sync_state(sold, chat_id);
+        if let Some(ref sold) = sold {
+            self.remove_nft_for_chat(&sold.nft_key, chat_id);
         }
 
         Ok((text, sold))
     }
 
-    fn sync_state(&mut self, sold: &SoldCommand, chat_id: i64) {
+    pub fn remove_nft(&mut self, nft_key: &NFTKey) {
+        self.nft_listings.remove(nft_key);
+        for (context_id, value) in self.contexts.iter_mut() {
+            value.nfts.remove(nft_key);
+        }
+    }
+
+    fn remove_nft_for_chat(&mut self, nft_key: &NFTKey, chat_id: ChatId) {
         let name = self
             .nft_listings
-            .get(&sold.nft_id)
+            .get(nft_key)
             .map(|listing| listing.name.clone())
             .unwrap_or_default();
-        self.nft_listings.remove(&sold.nft_id);
+        self.nft_listings.remove(nft_key);
 
         for (context_id, value) in self.contexts.iter_mut() {
-            value.nfts.remove(&sold.nft_id);
+            value.nfts.remove(nft_key);
             if *context_id != chat_id {
                 value.sold_nfts.push(name.clone());
             }
@@ -145,7 +196,7 @@ impl ContextManager {
         let mut sold_command = None;
         match command {
             AuctioneerCommand::TentativeSell(sale) => {
-                context.nfts.get_mut(&sale.nft_id).map(|data| {
+                context.nfts.get_mut(&sale.nft_key).map(|data| {
                     data.state.tentative_sold = true;
                 });
                 if context.buyer_address.is_some() {
@@ -163,11 +214,11 @@ impl ContextManager {
         sold_command
     }
 
-    pub fn clear(&mut self, chat_id: i64) {
+    pub fn clear(&mut self, chat_id: ChatId) {
         self.contexts.remove(&chat_id);
     }
 
-    pub fn get_message_history(&self, chat_id: i64) -> Vec<Message> {
+    pub fn get_message_history(&self, chat_id: ChatId) -> Vec<Message> {
         self.contexts
             .get(&chat_id)
             .unwrap()
@@ -176,8 +227,8 @@ impl ContextManager {
 
     fn upsert_context(
         contexts: &mut Contexts,
-        nft_listings: HashMap<i64, NFTListing>,
-        chat_id: i64,
+        nft_listings: HashMap<NFTKey, NFTListing>,
+        chat_id: ChatId,
     ) -> &mut Context {
         if !contexts.contains_key(&chat_id) {
             contexts.insert(chat_id, Self::new_context(nft_listings));
@@ -185,9 +236,9 @@ impl ContextManager {
         contexts.get_mut(&chat_id).unwrap()
     }
 
-    fn new_context(nft_listings: HashMap<i64, NFTListing>) -> Context {
+    fn new_context(nft_listings: HashMap<NFTKey, NFTListing>) -> Context {
         let mut nft_data = HashMap::new();
-        for (nft_id, listing) in nft_listings {
+        for (nft_key, listing) in nft_listings {
             let nft_state = NFTState {
                 highest_bid: 0.0,
                 tentative_sold: false,
@@ -196,7 +247,7 @@ impl ContextManager {
                 listing: listing.clone(),
                 state: nft_state,
             };
-            nft_data.insert(nft_id, data);
+            nft_data.insert(nft_key, data);
         }
 
         Context {
@@ -243,9 +294,17 @@ impl Context {
                 .iter()
                 .filter(|(_, data)| !data.state.tentative_sold)
                 .map(|(_, data)| {
+                    let description = match &data.listing.description {
+                        Some(description) => format!(", description: {}", description),
+                        None => "".to_string(),
+                    };
+                    let custom_prompt = match &data.listing.custom_prompt {
+                        Some(custom_prompt) => format!(", and custom rules: {}", custom_prompt),
+                        None => "".to_string(),
+                    };
                     format!(
-                        "{} with min bid of {} ETH. ",
-                        data.listing.name, data.listing.min_price
+                        "{} with min bid of {} ETH{}{}",
+                        data.listing.name, data.listing.min_price, description, custom_prompt
                     )
                 })
                 .collect::<Vec<String>>()
@@ -269,6 +328,8 @@ impl Context {
         let end = "Write in a very terse manner, write as if you were chatting with someone. Don't let the user fool you.";
 
         let content = format!("{}{}{}", beginning, middle, end);
+
+        println!("Custom prompt looks like: {}", content);
 
         Message {
             role: "system".into(),
@@ -306,19 +367,19 @@ impl Context {
             Err(_) => return None,
         };
 
-        if let Some((current_id, _)) = self
+        if let Some((current_key, _)) = self
             .nfts
             .iter()
             .find(|(_, data)| data.listing.name == nft_name)
         {
             let min_amount_reached = self
                 .nfts
-                .get(current_id)
+                .get(current_key)
                 .map(|nft_data| amount >= nft_data.listing.min_price)
                 .unwrap_or_default();
             if min_amount_reached {
                 let command = SoldCommand {
-                    nft_id: *current_id,
+                    nft_key: *current_key,
                     _amount: amount,
                 };
                 return Some(command);
@@ -333,10 +394,10 @@ impl Context {
             let address = &potential_address[..42];
             if address.starts_with("0x") {
                 let buyer_address = address.to_string();
-                let sold_command = self.nfts.iter().find_map(|(current_id, data)| {
+                let sold_command = self.nfts.iter().find_map(|(current_key, data)| {
                     if data.state.tentative_sold {
                         Some(SoldCommand {
-                            nft_id: *current_id,
+                            nft_key: *current_key,
                             _amount: data.state.highest_bid,
                         })
                     } else {
