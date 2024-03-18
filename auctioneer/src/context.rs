@@ -296,9 +296,17 @@ impl Context {
                 .iter()
                 .filter(|(_, data)| !data.state.tentative_sold)
                 .map(|(_, data)| {
+                    let description = match &data.listing.description {
+                        Some(description) => format!(", description: {}", description),
+                        None => "".to_string(),
+                    };
+                    let custom_prompt = match &data.listing.custom_prompt {
+                        Some(custom_prompt) => format!(", and custom rules: {}", custom_prompt),
+                        None => "".to_string(),
+                    };
                     format!(
-                        "{} with min bid of {} ETH. ",
-                        data.listing.name, data.listing.min_price
+                        "{} with min bid of {} ETH{}{}",
+                        data.listing.name, data.listing.min_price, description, custom_prompt
                     )
                 })
                 .collect::<Vec<String>>()
