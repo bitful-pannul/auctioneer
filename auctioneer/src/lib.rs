@@ -26,9 +26,9 @@ const PROCESS_ID: &str = "auctioneer:auctioneer:template.os";
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 struct InitialConfig {
-    openai_key: String,
-    telegram_bot_api_key: String,
-    private_wallet_address: String,
+    pub openai_key: String,
+    pub telegram_bot_api_key: String,
+    pub private_wallet_address: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -80,53 +80,6 @@ wit_bindgen::generate!({
 });
 
 
-// fn initialize_or_restore_session(our: &Address, state: Option<State>) -> anyhow::Result<Session> {
-//     let (initial_config, context_manager_opt) = match state {
-//         Some(state) => (state.config, Some(state.context_manager)),
-//         None => {
-//             let initial_config = receive_config_message(our);
-//             (initial_config, None)
-//         }
-//     };
-
-//     let Ok(openai_api) = spawn_openai_pkg(our.clone(), &initial_config.openai_key) else {
-//         return Err(anyhow::anyhow!("openAI couldn't boot."));
-//     };
-//     let Ok((tg_api, tg_worker)) =
-//         init_tg_bot(our.clone(), &initial_config.telegram_bot_api_key, None)
-//     else {
-//         return Err(anyhow::anyhow!("tg bot couldn't boot."));
-//     };
-
-//     let Ok(wallet) = initial_config.private_wallet_address.parse::<LocalWallet>() else {
-//         return Err(anyhow::anyhow!("couldn't parse private key."));
-//     };
-
-//     let context_manager = match context_manager_opt {
-//         Some(cm) => cm,
-//         None => {
-//             let cm = ContextManager::new(&NFTS);
-//             let state = State {
-//                 config: initial_config.clone(),
-//                 context_manager: cm.clone(),
-//             };
-//             let serialized_state = bincode::serialize(&state).expect("Failed to serialize state");
-//             set_state(&serialized_state);
-//             cm
-//         }
-//     };
-
-//     Ok(Session {
-//         tg_api,
-//         tg_worker,
-//         _wallet: wallet,
-//         context_manager,
-//         openai_api,
-//         _offerings: HashMap::new(),
-//         _sold: HashMap::new(),
-//     })
-// }
-
 fn config(body_bytes: &[u8]) -> Option<State> {
     let initial_config = serde_json::from_slice::<InitialConfig>(body_bytes).ok()?;
     let _ = http::send_response(
@@ -155,7 +108,7 @@ fn config(body_bytes: &[u8]) -> Option<State> {
     }
 }
 
-fn add_nft(body_bytes: &[u8]) -> Option<State> {
+fn add_nft(_body_bytes: &[u8]) -> Option<State> {
     return None; // TODO: Zen: Implement
 }
 
@@ -273,7 +226,34 @@ fn fetch_status(our: &Address, msg: &Message) -> Option<State> {
     let headers = HashMap::from([("Content-Type".to_string(), "application/json".to_string())]);
     let _ = http::send_response(http::StatusCode::OK, Some(headers), response);
 
-    state
+    state_
+}
+
+fn modify_session(our: &Address, session: &mut Option<Session>, state: Option<State>) -> anyhow::Result<()> {
+    if let Some(state) = state {
+        let Ok(openai_api) = spawn_openai_pkg(our.clone(), &state.config.openai_key) else {
+            return Err(anyhow::anyhow!("openAI couldn't boot."));
+        };
+        let Ok((tg_api, tg_worker)) =
+            init_tg_bot(our.clone(), &state.config.telegram_bot_api_key, None)
+        else {
+            return Err(anyhow::anyhow!("tg bot couldn't boot."));
+        };
+
+        let Ok(wallet) = state.config.private_wallet_address.parse::<LocalWallet>() else {
+            return Err(anyhow::anyhow!("couldn't parse private key."));
+        };
+        *session = Some(Session {
+            tg_api,
+            tg_worker,
+            _wallet: wallet,
+            context_manager: state.context_manager,
+            openai_api,
+            _offerings: HashMap::new(),
+            _sold: HashMap::new(),
+        });
+    }
+    Ok(())
 }
 
 fn handle_http_messages(our: &Address, message: &Message) -> Option<State> {
@@ -282,9 +262,7 @@ fn handle_http_messages(our: &Address, message: &Message) -> Option<State> {
             return None;
         }
         Message::Request {
-            ref source,
             ref body,
-            ref metadata,
             ..
         } => {
             let server_request = http::HttpServerRequest::from_bytes(body).ok()?;
@@ -294,7 +272,7 @@ fn handle_http_messages(our: &Address, message: &Message) -> Option<State> {
             let body = get_blob()?;
             let bound_path = http_request.bound_path(Some(PROCESS_ID));
             // TODO: Zen: Later on we use a superstruct with state and other fields, or an enum
-            let state = match bound_path {
+            match bound_path {
                 "/status" => {
                     return fetch_status(our, message);
                 }
@@ -307,7 +285,7 @@ fn handle_http_messages(our: &Address, message: &Message) -> Option<State> {
                 _ => {
                     return None;
                 }
-            };
+            }
         }
     }
 }
@@ -333,8 +311,7 @@ fn init(our: Address) {
 
         if message.source().process == "http_server:distro:sys" {
             let state = handle_http_messages(&our, &message);
-            modify_session(&mut session, state);
-            // TODO: Zen: Update session from state
+            let _ = modify_session(&our, &mut session, state);
         } else {
             match handle_internal_messages(&message, &mut session) {
                 Ok(()) => {}
