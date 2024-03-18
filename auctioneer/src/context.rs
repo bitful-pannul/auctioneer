@@ -18,7 +18,6 @@ type Contexts = HashMap<i64, Context>;
 pub struct ContextManager {
     nft_listings: HashMap<i64, NFTListing>,
     contexts: Contexts,
-    openai_api: OpenaiApi,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -70,7 +69,7 @@ pub struct SoldCommand {
 
 impl ContextManager {
     // TODO: Initializing should probably be empty in the long run, this is for testing.
-    pub fn new(openai_api: OpenaiApi, nft_consts: &[(i64, &str, f32); 3]) -> Self {
+    pub fn new(nft_consts: &[(i64, &str, f32); 3]) -> Self {
         let mut nft_listings = HashMap::new();
         for nft in nft_consts {
             let (id, name, price) = nft;
@@ -85,7 +84,6 @@ impl ContextManager {
         Self {
             nft_listings,
             contexts: HashMap::new(),
-            openai_api,
         }
     }
 
@@ -93,9 +91,10 @@ impl ContextManager {
         &mut self,
         chat_id: i64,
         text: &str,
+        openai_api: &OpenaiApi
     ) -> anyhow::Result<(String, Option<SoldCommand>)> {
         let context = Self::upsert_context(&mut self.contexts, self.nft_listings.clone(), chat_id);
-        let message = context.chat(&self.openai_api, text)?;
+        let message = context.chat(openai_api, text)?;
         let mut text = message.content.clone();
 
         context.chat_history.push(message);
