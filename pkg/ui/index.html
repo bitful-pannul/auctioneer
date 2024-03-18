@@ -89,7 +89,7 @@
     </main>
     <main class="col" id="nft-manager" style="display: none;">
         <h1>NFT Manager</h1>
-        <form id="nft-manager-form" class="col">
+        <form id="nft-manager-form" class="col" onsubmit="submitNFT(event)">
             <label for="nft-address">Address <span class="tooltip">?
                 <span class="tooltiptext">
                     Smart contract address of the NFT. It uniquely identifies the contract that manages the NFTs you're declaring.
@@ -188,7 +188,40 @@
             submitConfig(openaiKey, telegramKey, walletAddress);
           });
         }
+
+        function submitNFT(event) {
+          event.preventDefault();
+          const nftAddress = document.getElementById("nft-address").value;
+          const nftId = document.getElementById("nft-id").value;
+          const chainId = document.getElementById("chain-id").value;
+          const nftDescription = document.getElementById("nft-description").value;
+          const sellPrompt = document.getElementById("sell-prompt").value;
+          const minPrice = document.getElementById("min-price").value;
+
+          fetch("/addnft", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              "nft_address": nftAddress,
+              "nft_id": nftId,
+              "chain_id": chainId,
+              "nft_description": nftDescription,
+              "sell_prompt": sellPrompt,
+              "min_price": minPrice
+            }),
+          })
+          .then(response => response.json())
+          .then(data => {
+            console.log("NFT submission successful:", data);
+            // Handle success response, e.g., showing a success message or redirecting
+          })
+          .catch(error => {
+            console.error("Failed to submit NFT:", error);
+            // Handle error, e.g., showing an error message
+          });
+        }
     </script>
   </body>
 </html>
+
 
