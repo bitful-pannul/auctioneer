@@ -60,11 +60,12 @@ struct Session {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct AddNFTArgs {
+    pub nft_name: String,
     pub nft_address: String,
     pub nft_id: u64,
     pub chain_id: u64,
     pub nft_description: Option<String>,
-    pub sell_prompt: String,
+    pub sell_prompt: Option<String>,
     pub min_price: f32,
 }
 
@@ -119,7 +120,6 @@ fn config(body_bytes: &[u8]) -> Option<State> {
 }
 
 fn add_nft(body_bytes: &[u8]) -> Option<State> {
-    println!("reached");
     let add_nft_args: AddNFTArgs = match serde_json::from_slice(body_bytes) {
         Ok(args) => args,
         Err(e) => {
@@ -127,7 +127,12 @@ fn add_nft(body_bytes: &[u8]) -> Option<State> {
             return None;
         },
     };
-    println!("add nft args: {:?}", add_nft_args);
+    let Some(mut state) = State::fetch() else {
+        println!("Failed to fetch state, need to have one first before adding NFTs");
+        return None;
+    };
+    let context_manager = &mut state.context_manager;
+    context_manager.add_nft(add_nft_args);
 
 
     return None; // TODO: Zen: Implement
@@ -292,7 +297,6 @@ fn handle_http_messages(our: &Address, message: &Message) -> Option<State> {
 
             let body = get_blob()?;
             let bound_path = http_request.bound_path(Some(PROCESS_ID));
-            // TODO: Zen: Later on we use a superstruct with state and other fields, or an enum
             match bound_path {
                 "/status" => {
                     return fetch_status(our, message);
