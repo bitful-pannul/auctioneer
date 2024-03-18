@@ -40,7 +40,7 @@ struct State {
 impl State {
     fn fetch() -> Option<State> {
         if let Some(state_bytes) = get_state() {
-            bincode::deserialize(&state_bytes).expect("Failed to deserialize state")
+            bincode::deserialize(&state_bytes).ok()
         } else {
             None
         }
@@ -56,6 +56,16 @@ struct Session {
     // TODO: Zena: Offerings and sold should probably go into context_manager.
     _offerings: Offerings,
     _sold: Sold,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct AddNFTArgs {
+    pub nft_address: String,
+    pub nft_id: u64,
+    pub chain_id: u64,
+    pub nft_description: Option<String>,
+    pub sell_prompt: String,
+    pub min_price: f32,
 }
 
 /// offerings: (nft_address, nft_id) -> (rules prompt, min_price)
@@ -108,7 +118,18 @@ fn config(body_bytes: &[u8]) -> Option<State> {
     }
 }
 
-fn add_nft(_body_bytes: &[u8]) -> Option<State> {
+fn add_nft(body_bytes: &[u8]) -> Option<State> {
+    println!("reached");
+    let add_nft_args: AddNFTArgs = match serde_json::from_slice(body_bytes) {
+        Ok(args) => args,
+        Err(e) => {
+            println!("Failed to parse AddNFTArgs: {:?}", e);
+            return None;
+        },
+    };
+    println!("add nft args: {:?}", add_nft_args);
+
+
     return None; // TODO: Zen: Implement
 }
 
@@ -322,3 +343,5 @@ fn init(our: Address) {
         }
     }
 }
+
+// TODO: Zen: Break away some of the methods into another file

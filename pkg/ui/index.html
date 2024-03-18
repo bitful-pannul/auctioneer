@@ -272,7 +272,7 @@
       const sellPrompt = document.getElementById("sell-prompt").value;
       const minPrice = document.getElementById("min-price").value;
 
-      if (!nftAddress || !nftId || !chainId || !nftDescription || !sellPrompt || !minPrice) {
+      if (!nftAddress || !nftId || !chainId || !sellPrompt || !minPrice) {
         alert("Please fill out all fields before submitting.");
         return;
       }
@@ -282,11 +282,11 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           "nft_address": nftAddress,
-          "nft_id": nftId,
-          "chain_id": chainId,
+          "nft_id": parseInt(nftId, 10),
+          "chain_id": parseInt(chainId, 10),
           "nft_description": nftDescription,
           "sell_prompt": sellPrompt,
-          "min_price": minPrice
+          "min_price": parseFloat(minPrice)
         }),
       })
         .then(response => response.json())
@@ -303,3 +303,4 @@
 </body>
 
 </html>
+
