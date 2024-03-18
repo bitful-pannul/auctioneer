@@ -264,6 +264,8 @@ fn fetch_status(our: &Address) -> Option<State> {
             (None, "config")
         };
 
+        println!("State is {:?}", state);
+
 
         let Ok(response) = serde_json::to_vec(&serde_json::json!({ "status": status })) else {
             println!("Failed to serialize status: {:?}", status);

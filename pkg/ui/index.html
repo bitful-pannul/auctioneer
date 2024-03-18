@@ -89,7 +89,51 @@
     </main>
     <main class="col" id="nft-manager" style="display: none;">
         <h1>NFT Manager</h1>
-        <button id="submit-nft">Submit NFT</button>
+        <form id="nft-manager-form" class="col">
+            <label for="nft-address">Address <span class="tooltip">?
+                <span class="tooltiptext">
+                    Smart contract address of the NFT. It uniquely identifies the contract that manages the NFTs you're declaring.
+                </span>
+            </span></label>
+            <input id="nft-address" required="" name="nft-address" placeholder="NFT Contract Address" value="">
+
+            <label for="nft-id">NFT ID <span class="tooltip">?
+                <span class="tooltiptext">
+                    The unique identifier for the specific NFT within its collection.
+                </span>
+            </span></label>
+            <input id="nft-id" required="" name="nft-id" placeholder="NFT ID" value="">
+
+            <label for="chain-id">Chain ID <span class="tooltip">?
+                <span class="tooltiptext">
+                    Identifies the specific blockchain network (e.g., Ethereum Mainnet, Polygon) your NFT exists on. Each chain has a unique ID to ensure transactions are processed on the correct network. For example, 1 for Ethereum, 137 for Polygon.
+                </span>
+            </span></label>
+            <input id="chain-id" required="" name="chain-id" placeholder="Chain ID" value="">
+
+            <label for="nft-description">Description of NFT (optional) <span class="tooltip">?
+                <span class="tooltiptext">
+                    Additional description you'll give to the bot for the sale of that NFT. Can be a backstory, or anything you want.
+                </span>
+            </span></label>
+            <textarea id="nft-description" name="nft-description" placeholder="NFT Description"></textarea>
+
+            <label for="sell-prompt">Custom prompt on how to sell it <span class="tooltip">?
+                <span class="tooltiptext">
+                    Give instructions on what the bot should do to sell it. For example, being greedy vs lenient.
+                </span>
+            </span></label>
+            <textarea id="sell-prompt" required="" name="sell-prompt" placeholder="Custom Selling Instructions"></textarea>
+
+            <label for="min-price">Min Price <span class="tooltip">?
+                <span class="tooltiptext">
+                    The minimum price for the NFT. No contract lower than that price will be generated, and the bot will try to get more than the price out of the auction.
+                </span>
+            </span></label>
+            <input id="min-price" required="" name="min-price" placeholder="Minimum Price" value="">
+
+            <button type="submit">Submit NFT</button>
+        </form>
     </main>
     <script>
         window.onload = async function() {
