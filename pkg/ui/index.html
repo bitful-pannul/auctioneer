@@ -1,9 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <!-- This sets window.our.node -->
-    <script src="/our.js"></script>
-
     <meta charset="UTF-8" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -48,7 +45,7 @@
     </style>
   </head>
   <body>
-    <main class="col">
+    <main class="col" id="initial-config">
         <h1>Initial Configuration</h1>
         <form id="config-form" class="col">
             <label for="openai-key">OpenAI API Key <span class="tooltip">?
@@ -90,7 +87,36 @@
             <button> Submit </button>
         </form>
     </main>
+    <main class="col" id="nft-manager" style="display: none;">
+        <h1>NFT Manager</h1>
+        <button id="submit-nft">Submit NFT</button>
+    </main>
     <script>
+        window.onload = async function() {
+          console.log("Fetching status on window load."); // Added for debugging
+          await fetchStatus();
+          console.log("Status fetched successfully."); // Added for debugging
+        }
+
+        async function fetchStatus() {
+          const response = await fetch("/auctioneer:auctioneer:template.os/status", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ "status": "config" }),
+          });
+          const data = await response.json();
+          if (data.status === "config") {
+            document.getElementById("initial-config").style.display = "block";
+            document.getElementById("nft-manager").style.display = "none"; // Ensure NFT Manager is hidden when showing config
+            prepareConfigFormEventListener();
+          } else if (data.status === "manage-nfts") {
+            document.getElementById("nft-manager").style.display = "block";
+            document.getElementById("initial-config").style.display = "none"; // Ensure config is hidden when showing NFT Manager
+          } else {
+            console.error("Unknown status:", data);
+          }
+        }
+
         async function submitConfig(openaiKey, telegramKey, walletAddress) {
           const result = await fetch("/auctioneer:auctioneer:template.os/config", {
             method: "PUT",
@@ -98,14 +124,16 @@
             body: JSON.stringify({ "openai_key": openaiKey, "telegram_bot_api_key": telegramKey, "private_wallet_address": walletAddress}),
           });
           const data = await result.json();
+          console.debug("Response message:", data.message); // Debugging data.message
           if (data.message === "success") {
-            window.location.href = "/nft-manager.html"; // Redirect to NFT Manager page on success
+            document.getElementById("initial-config").style.display = "none"; // Hide initial configuration form
+            document.getElementById("nft-manager").style.display = "block"; // Display NFT Manager view
           } else {
             console.error("Failed to submit configuration:", data);
           }
         }
 
-        document.addEventListener("DOMContentLoaded", () => {
+        function prepareConfigFormEventListener() {
           const form = document.getElementById("config-form");
           form.addEventListener("submit", (e) => {
             e.preventDefault();
@@ -115,7 +143,8 @@
             const walletAddress = document.getElementById("private-wallet-address").value;
             submitConfig(openaiKey, telegramKey, walletAddress);
           });
-        });
+        }
     </script>
   </body>
 </html>
+

@@ -66,7 +66,7 @@ wit_bindgen::generate!({
     },
 });
 
-fn startup_loop(our: &Address) -> InitialConfig {
+fn receive_config_message(our: &Address) -> InitialConfig {
     loop {
         let Ok(msg) = await_message() else {
             continue;
@@ -80,19 +80,15 @@ fn startup_loop(our: &Address) -> InitialConfig {
     }
 }
 
-fn initialize_or_restore_session(our: &Address) -> anyhow::Result<Session> {
-    let (initial_config, context_manager_opt) = if let Some(state_bytes) = get_state() {
-        let state: State = match bincode::deserialize(&state_bytes) {
-            Ok(state) => state,
-            Err(e) => {
-                // We panic here because we don't want to loop if there's faulty state.
-                panic!("Failed to deserialize state: {:?}", e)
-            }
-        };
-        (state.config, Some(state.context_manager))
-    } else {
-        let initial_config = startup_loop(our);
-        (initial_config, None)
+fn initialize_or_restore_session(our: &Address, state: Option<State>) -> anyhow::Result<Session> {
+    let (initial_config, context_manager_opt) = match state {
+        Some(state) => {
+            (state.config, Some(state.context_manager))
+        },
+        None => {
+            let initial_config = receive_config_message(our);
+            (initial_config, None)
+        },
     };
 
     let Ok(openai_api) = spawn_openai_pkg(our.clone(), &initial_config.openai_key) else {
@@ -249,27 +245,51 @@ fn handle_request(source: &Address, body: &[u8], session: &mut Session) -> anyho
 
 call_init!(init);
 
+
+fn fetch_status(our: &Address) -> Option<State> {
+    loop {
+        let Ok(msg) = await_message() else {
+            continue
+        };
+        if msg.source().node != our.node || msg.source().process != "http_server:distro:sys" {
+            continue;
+        }
+        let (state, status): (Option<State>, &str) = if let Some(state_bytes) = get_state() {
+            let state: State = match bincode::deserialize(&state_bytes) {
+                Ok(state) => state,
+                Err(_) => panic!("Found a saved state but couldn't deserialize!"),
+            };
+            (Some(state), "manage-nfts")
+        } else {
+            (None, "config")
+        };
+
+
+        let Ok(response) = serde_json::to_vec(&serde_json::json!({ "status": status })) else {
+            println!("Failed to serialize status: {:?}", status);
+            return None;
+        };
+
+        println!("Send back the status {:?}", status);
+        let headers = HashMap::from([("Content-Type".to_string(), "application/json".to_string())]);
+        let _ = http::send_response(
+            http::StatusCode::OK,
+            Some(headers),
+            response,
+        );
+
+        return state;
+    }
+}
+
 /// on startup, the auctioneer will need a tg token, open_ai token, and a private key holding the NFTs.
 fn init(our: Address) {
     println!("initialize me!");
-    let _ = http::serve_index_html(&our, "ui", true, false, vec!["/config"]);
-    // http://localhost:8080/auctioneer:auctioneer:template.os/config
-    // That's a mouthful innit
+    let _ = http::serve_index_html(&our, "ui", true, false, vec!["/status", "/config"]);
 
-    let mut session = loop {
-        match initialize_or_restore_session(&our) {
-            Ok(session) => {
-                http::send_response(
-                    http::StatusCode::OK,
-                    None,
-                    b"success".to_vec(),
-                );
-                break session
-            }
-            Err(e) => {
-                println!("Failed to initialize or restore session: {:?}", e);
-            }
-        }
+    let state = fetch_status(&our);
+    let Ok(mut session) = initialize_or_restore_session(&our, state) else {
+        panic!("Failed to initialize or restore session");
     };
 
     println!("Session loaded successfully!");
