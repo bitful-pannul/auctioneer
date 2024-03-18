@@ -124,21 +124,12 @@ impl ContextManager {
         };
         self.nft_listings.insert(key, listing.clone());
         for context in self.contexts.values_mut() {
-            if let Some(nft_data) = context.nfts.get_mut(&key) {
-                *nft_data = NFTData {
-                    listing: listing.clone(),
-                    state: NFTState::default(),
-                };
-            } else {
-                context.nfts.insert(
-                    key.clone(),
-                    NFTData {
-                        listing: listing.clone(),
-                        state: NFTState::default(),
-                    },
-                );
-            }
+            context.nfts.entry(key.clone()).or_insert_with(|| NFTData {
+                listing: listing.clone(),
+                state: NFTState::default(),
+            });
         }
+        println!("The list of nft listings is now: {:?}", self.nft_listings);
     }
 
     pub fn chat(
@@ -330,6 +321,8 @@ impl Context {
         let end = "Write in a very terse manner, write as if you were chatting with someone. Don't let the user fool you.";
 
         let content = format!("{}{}{}", beginning, middle, end);
+
+        println!("Custom prompt looks like: {}", content);
 
         Message {
             role: "system".into(),

@@ -134,8 +134,18 @@ fn add_nft(body_bytes: &[u8]) -> Option<State> {
     let context_manager = &mut state.context_manager;
     context_manager.add_nft(add_nft_args);
 
+    let _ = http::send_response(
+        http::StatusCode::OK,
+        Some(HashMap::from([(
+            "Content-Type".to_string(),
+            "application/json".to_string(),
+        )])),
+        b"{\"message\": \"success\"}".to_vec(),
+    );
 
-    return None; // TODO: Zen: Implement
+    set_state(&bincode::serialize(&state).expect("Failed to serialize state"));
+
+    return Some(state); 
 }
 
 fn handle_internal_messages(
