@@ -170,7 +170,7 @@ impl ContextManager {
 
     pub fn remove_nft(&mut self, nft_key: &NFTKey) {
         self.nft_listings.remove(nft_key);
-        for (context_id, value) in self.contexts.iter_mut() {
+        for (_, value) in self.contexts.iter_mut() {
             value.nfts.remove(nft_key);
         }
     }

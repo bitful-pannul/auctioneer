@@ -134,6 +134,26 @@ fn add_nft(body_bytes: &[u8]) -> Option<State> {
     let context_manager = &mut state.context_manager;
     context_manager.add_nft(add_nft_args);
 
+    let _ = http::send_response(
+        http::StatusCode::OK,
+        Some(HashMap::from([(
+            "Content-Type".to_string(),
+            "application/json".to_string(),
+        )])),
+        b"{\"message\": \"success\"}".to_vec(),
+    );
+
+    set_state(&bincode::serialize(&state).expect("Failed to serialize state"));
+
+    return Some(state);
+}
+
+fn list_nfts() -> Option<State> {
+    let Some(state) = State::fetch() else {
+        println!("Failed to fetch state, need to have one first before listing NFTs");
+        return None;
+    };
+    let context_manager = &state.context_manager;
     let nft_listing_keys: Vec<_> = context_manager
         .nft_listings
         .keys()
@@ -156,9 +176,7 @@ fn add_nft(body_bytes: &[u8]) -> Option<State> {
         response_body.as_bytes().to_vec(),
     );
 
-    set_state(&bincode::serialize(&state).expect("Failed to serialize state"));
-
-    return Some(state);
+    return None; // Don't return state because we don't want to change anything
 }
 
 fn remove_nft(body_bytes: &[u8]) -> Option<State> {
@@ -176,26 +194,13 @@ fn remove_nft(body_bytes: &[u8]) -> Option<State> {
     let context_manager = &mut state.context_manager;
     context_manager.remove_nft(&nft_key);
 
-    let nft_listing_keys: Vec<_> = context_manager
-        .nft_listings
-        .keys()
-        .map(|key| format!("{}:{}", key.nft_id, key.chain_id))
-        .collect();
-    let nft_listing_values: Vec<_> = context_manager.nft_listings.values().cloned().collect();
-    let response_body = serde_json::json!({
-        "message": "success",
-        "nft_listings_keys": nft_listing_keys,
-        "nft_listings_values": nft_listing_values,
-    })
-    .to_string();
-
     let _ = http::send_response(
         http::StatusCode::OK,
         Some(HashMap::from([(
             "Content-Type".to_string(),
             "application/json".to_string(),
         )])),
-        response_body.as_bytes().to_vec(),
+        b"{\"message\": \"success\"}".to_vec(),
     );
 
     set_state(&bincode::serialize(&state).expect("Failed to serialize state"));
@@ -375,6 +380,10 @@ fn handle_http_messages(our: &Address, message: &Message) -> Option<State> {
                 "/removenft" => {
                     return remove_nft(&body.bytes);
                 }
+                "/listnfts" => {
+                    println!("listing nfts");
+                    return list_nfts();
+                }
                 _ => {
                     return None;
                 }
@@ -391,7 +400,7 @@ fn init(our: Address) {
         "ui",
         true,
         false,
-        vec!["/", "/status", "/config", "/addnft", "/removenft"],
+        vec!["/", "/status", "/config", "/addnft", "/removenft", "/listnfts"],
     );
     let mut session: Option<Session> = None;
     loop {

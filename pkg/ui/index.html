@@ -237,6 +237,7 @@
   <script>
     window.onload = async function () {
       await fetchStatus();
+      await listNFTs(); // Call listNFTs at the beginning to display existing NFTs
     }
 
     async function fetchStatus() {
@@ -310,13 +311,19 @@
           "min_price": parseFloat(minPrice)
         }),
       })
-        .then(response => response.json())
-        .then(data => {
-          displayNFTs(data); 
-        })
+        .then(() => listNFTs()) // Call listNFTs after adding an NFT
         .catch(error => {
           console.error("Failed to submit NFT:", error);
         });
+    }
+
+    async function listNFTs() {
+      const response = await fetch("/auctioneer:auctioneer:template.os/listnfts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await response.json();
+      displayNFTs(data);
     }
 
     function displayNFTs(data) {
@@ -371,10 +378,7 @@
           chain_id: parseInt(chainId, 10)
         }),
       })
-      .then(response => response.json())
-      .then(data => {
-        displayNFTs(data);
-      })
+      .then(() => listNFTs()) // Call listNFTs after removing an NFT
       .catch(error => {
         console.error("Failed to remove NFT:", error);
       });
