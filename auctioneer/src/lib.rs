@@ -306,9 +306,6 @@ fn _handle_internal_messages(
 call_init!(init);
 
 fn fetch_status(our: &Address, msg: &Message) -> Option<State> {
-    if msg.source().node != our.node {
-        return None;
-    }
     let (state_, status): (Option<State>, &str) = match State::fetch() {
         Some(state) => (Some(state), "manage-nfts"),
         None => (None, "config"),
