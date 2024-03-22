@@ -2,6 +2,7 @@ use crate::llm_api::OpenaiApi;
 use crate::llm_types::openai::ChatParams;
 use crate::llm_types::openai::Message;
 use crate::AddNFTArgs;
+use kinode_process_lib::eth;
 use kinode_process_lib::println;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -30,10 +31,11 @@ struct Context {
     pub offer_nfts: Vec<String>,
 }
 
-#[derive(Copy, Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
 pub struct NFTKey {
-    pub nft_id: u64,
-    pub chain_id: u64,
+    pub id: u64,
+    pub chain: u64,
+    pub address: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -72,24 +74,26 @@ impl Default for AuctioneerCommand {
     }
 }
 
+// pls duplicate offercommand to tentativveoffecommand
+// internal command to be used by the auctioneer
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct OfferCommand {
-    nft_key: NFTKey,
-    nft_address: String,
-    buyer_address: Option<String>,
-    _amount: f32,
+    pub nft_key: NFTKey,
+    pub buyer_address: Option<String>,
+    pub price: f32,
 }
 
 impl ContextManager {
     pub fn new(nft_consts: &[(i64, &str, f32); 3]) -> Self {
         let mut nft_listings = HashMap::new();
-        // TODO: Zen: Remove fluffer
+
         for nft in nft_consts {
             let (id, name, price) = nft;
             nft_listings.insert(
                 NFTKey {
-                    nft_id: *id as u64,
-                    chain_id: 1,
+                    id: *id as u64,
+                    address: "placeholder for debugging".to_string(),
+                    chain: 1,
                 },
                 NFTListing {
                     name: name.to_string(),
@@ -116,7 +120,11 @@ impl ContextManager {
             sell_prompt,
             min_price,
         } = args;
-        let key = NFTKey { nft_id, chain_id };
+        let key = NFTKey {
+            id: nft_id,
+            address: nft_address.clone(),
+            chain: chain_id,
+        };
         let listing = NFTListing {
             name: nft_name,
             address: nft_address,
@@ -124,7 +132,8 @@ impl ContextManager {
             custom_prompt: sell_prompt,
             min_price,
         };
-        self.nft_listings.insert(key, listing.clone());
+
+        self.nft_listings.insert(key.clone(), listing.clone());
         for context in self.contexts.values_mut() {
             context.nfts.entry(key.clone()).or_insert_with(|| NFTData {
                 listing: listing.clone(),
@@ -381,10 +390,9 @@ impl Context {
                 .unwrap_or_default();
             if min_amount_reached {
                 let command = OfferCommand {
-                    nft_key: *current_key,
-                    nft_address: self.nfts[current_key].listing.address.clone(),
+                    nft_key: current_key.clone(),
                     buyer_address: self.buyer_address.clone(),
-                    _amount: amount,
+                    price: amount,
                 };
                 return Some(command);
             }
@@ -402,9 +410,8 @@ impl Context {
                 let offer_command = self.nfts.iter().find_map(|(current_key, data)| {
                     if data.state.tentative_offer {
                         Some(OfferCommand {
-                            nft_key: *current_key,
-                            nft_address: data.listing.address.clone(),
-                            _amount: data.state.highest_bid,
+                            nft_key: current_key.clone(),
+                            price: data.state.highest_bid,
                             buyer_address: Some(buyer_address.clone()),
                         })
                     } else {

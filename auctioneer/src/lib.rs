@@ -1,3 +1,4 @@
+use alloy_primitives::Address as EthAddress;
 use alloy_signer::LocalWallet;
 use context::NFTKey;
 use frankenstein::{
@@ -8,7 +9,7 @@ use kinode_process_lib::{
     await_message, call_init, get_blob, get_state, http, println, set_state, Address, Message,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
 mod tg_api;
 use tg_api::{init_tg_bot, Api, TgResponse};
@@ -157,7 +158,7 @@ fn list_nfts() -> Option<State> {
     let nft_listing_keys: Vec<_> = context_manager
         .nft_listings
         .keys()
-        .map(|key| format!("{}:{}", key.nft_id, key.chain_id))
+        .map(|key| format!("{}:{}", key.id, key.chain))
         .collect();
     let nft_listing_values: Vec<_> = context_manager.nft_listings.values().cloned().collect();
     let response_body = serde_json::json!({
@@ -281,12 +282,36 @@ fn _handle_internal_messages(
                         } else {
                             let (text, sold) =
                                 context_manager.chat(msg.chat.id, &text, &openai_api)?;
-                            println!("Sale has been received with {:?}", sold);
-                            println!(
-                                "The message list is {:?}",
-                                context_manager.get_message_history(msg.chat.id).last()
-                            );
-                            text
+                            if let Some(sold) = sold {
+                                let valid_until = std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .expect("Time went backwards")
+                                    .as_secs()
+                                    + 3600;
+
+                                let (uid, sig) = contracts::_create_offer(
+                                    &session._wallet,
+                                    &EthAddress::from_str(&sold.nft_key.address)?,
+                                    sold.nft_key.id,
+                                    &EthAddress::from_str(&sold.buyer_address.unwrap())?,
+                                    (sold.price * 1e18 as f32) as u64,
+                                    valid_until,
+                                )?;
+
+                                let link = format!(
+                                    "https://template.com/buy?address={}&id={}&price={}&valid={}&uid={}&sig={}",
+                                    sold.nft_key.address,
+                                    sold.nft_key.id,
+                                    sold.price,
+                                    valid_until,
+                                    uid,
+                                    hex::encode(sig.as_bytes())
+                                );
+                                println!("Purchase link: {}", link);
+                                format!("buy it at the link: {}", &link)
+                            } else {
+                                text
+                            }
                         };
                         tg_api.send_message(&params)?;
                     }
