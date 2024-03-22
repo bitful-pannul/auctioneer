@@ -188,7 +188,7 @@ fn remove_nft(body_bytes: &[u8]) -> Option<State> {
         }
     };
     let Some(mut state) = State::fetch() else {
-        println!("Failed to fetch state, need to have one first before adding NFTs");
+        println!("Failed to fetch state, need to have one first before removing NFTs");
         return None;
     };
     let context_manager = &mut state.context_manager;
@@ -306,7 +306,7 @@ fn _handle_internal_messages(
 call_init!(init);
 
 fn fetch_status(our: &Address, msg: &Message) -> Option<State> {
-    let (state_, status): (Option<State>, &str) = match State::fetch() {
+    let (_state, status): (Option<State>, &str) = match State::fetch() {
         Some(state) => (Some(state), "manage-nfts"),
         None => (None, "config"),
     };
@@ -319,7 +319,7 @@ fn fetch_status(our: &Address, msg: &Message) -> Option<State> {
     let headers = HashMap::from([("Content-Type".to_string(), "application/json".to_string())]);
     let _ = http::send_response(http::StatusCode::OK, Some(headers), response);
 
-    state_
+    return None;
 }
 
 fn modify_session(
@@ -378,7 +378,6 @@ fn handle_http_messages(our: &Address, message: &Message) -> Option<State> {
                     return remove_nft(&body.bytes);
                 }
                 "/listnfts" => {
-                    println!("listing nfts");
                     return list_nfts();
                 }
                 _ => {
@@ -397,7 +396,14 @@ fn init(our: Address) {
         "ui",
         true,
         false,
-        vec!["/", "/status", "/config", "/addnft", "/removenft", "/listnfts"],
+        vec![
+            "/",
+            "/status",
+            "/config",
+            "/addnft",
+            "/removenft",
+            "/listnfts",
+        ],
     );
     let mut session: Option<Session> = None;
     loop {
