@@ -299,13 +299,14 @@ fn _handle_internal_messages(
                                 )?;
 
                                 let link = format!(
-                                    "https://template.com/buy?address={}&id={}&price={}&valid={}&uid={}&sig={}",
+                                    "https://template.com/buy?nft={}&id={}&price={}&valid={}&uid={}&sig={}&chain={}",
                                     sold.nft_key.address,
                                     sold.nft_key.id,
                                     sold.price,
                                     valid_until,
                                     uid,
-                                    hex::encode(sig.as_bytes())
+                                    hex::encode(sig.as_bytes()),
+                                    sold.nft_key.chain
                                 );
                                 println!("Purchase link: {}", link);
                                 format!("buy it at the link: {}", &link)

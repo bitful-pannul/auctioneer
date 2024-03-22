@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { NextPage } from "next";
 import { parseEther } from "viem/utils";
-import { erc721ABI, useAccount, useContractRead, useContractWrite } from "wagmi";
+import { erc721ABI, useAccount, useContractRead, useContractWrite, useSwitchNetwork } from "wagmi";
 import { Address, AddressInput, EtherInput, InputBase, IntegerInput } from "~~/components/scaffold-eth";
 import NFTEscrow from "~~/contracts/NFTEscrow.json";
 import { useScaffoldContractRead, useScaffoldContractWrite } from "~~/hooks/scaffold-eth";
@@ -13,6 +13,7 @@ const ESCROW_ADDRESS = "0x7b1431A0f20A92dD7E42A28f7Ba9FfF192F36DF3";
 
 const Home: NextPage = () => {
   const { address: connectedAddress } = useAccount();
+  const { switchNetwork } = useSwitchNetwork();
   const searchParams = useSearchParams();
 
   const [nftAddress, setNftAddress] = useState(searchParams.get("nft") || "");
@@ -20,13 +21,15 @@ const Home: NextPage = () => {
   const [price, setPrice] = useState(searchParams.get("price") || "");
   const [uid, setUid] = useState(searchParams.get("uid") || "");
   const [validUntil, setValidUntil] = useState(searchParams.get("valid") || "");
-  const [signature, setSignature] = useState(searchParams.get("signature") || "");
+  const [signature, setSignature] = useState(searchParams.get("sig") || "");
   //
-  const [chainId, setChainId] = useState(searchParams.get("chain_id") || "");
+  const [chainId, setChainId] = useState(searchParams.get("chain") || null);
 
   const [tokenURI, setTokenURI] = useState("");
   const [metadata, setMetadata] = useState(null);
   const [metadataVisible, setMetadataVisible] = useState(false); // New state for toggling visibility
+
+
 
   const { data: tokenURIData, isLoading: isDataLoading } = useContractRead({
     abi: erc721ABI,
@@ -45,10 +48,15 @@ const Home: NextPage = () => {
 
   const buyy = async () => {
     //console.log('argsa: ', nftAddress, nftId, price, uid, validUntil, signature)
+
     await writeAsync();
   };
 
   useEffect(() => {
+    if (chainId) {
+      switchNetwork?.(parseInt(chainId));
+    }
+
     if (tokenURIData) {
       const fetchMetadata = async () => {
         try {
