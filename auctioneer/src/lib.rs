@@ -252,9 +252,9 @@ fn _handle_internal_messages(
                             context_manager.clear(msg.chat.id);
                             "Reset succesful!".to_string()
                         } else {
-                            let (text, sold) =
+                            let (text, finalized_offer) =
                                 context_manager.chat(msg.chat.id, &text, &openai_api)?;
-                            if let Some(sold) = sold {
+                            if let Some(finalized_offer) = finalized_offer {
                                 let valid_until = std::time::SystemTime::now()
                                     .duration_since(std::time::UNIX_EPOCH)
                                     .expect("Time went backwards")
@@ -263,22 +263,22 @@ fn _handle_internal_messages(
 
                                 let (uid, sig) = contracts::_create_offer(
                                     &session._wallet,
-                                    &EthAddress::from_str(&sold.nft_key.address)?,
-                                    sold.nft_key.id,
-                                    &EthAddress::from_str(&sold.buyer_address.unwrap())?,
-                                    (sold.price * 1e18 as f32) as u64,
+                                    &EthAddress::from_str(&finalized_offer.nft_key.address)?,
+                                    finalized_offer.nft_key.id,
+                                    &EthAddress::from_str(&finalized_offer.buyer_address)?,
+                                    (finalized_offer.price * 1e18 as f32) as u64,
                                     valid_until,
                                 )?;
 
                                 let link = format!(
                                     "https://template.com/buy?nft={}&id={}&price={}&valid={}&uid={}&sig={}&chain={}",
-                                    sold.nft_key.address,
-                                    sold.nft_key.id,
-                                    sold.price,
+                                    finalized_offer.nft_key.address,
+                                    finalized_offer.nft_key.id,
+                                    finalized_offer.price,
                                     valid_until,
                                     uid,
                                     hex::encode(sig.as_bytes()),
-                                    sold.nft_key.chain
+                                    finalized_offer.nft_key.chain
                                 );
                                 println!("Purchase link: {}", link);
                                 format!("buy it at the link: {}", &link)

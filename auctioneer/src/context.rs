@@ -61,9 +61,10 @@ struct NFTState {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 enum AuctioneerCommand {
     /// Tentative sell is when the user has said they've offer an NFT, but we're not selling unless there's a buyer address
-    TentativeOffer(OfferCommand),
+    TentativeOffer(TentativeOfferCommand),
     /// Finalizing a sale means linking the buyer address to the NFT, then guaranteed offer
-    FinalizeOffer(OfferCommand),
+    LinkAddress(LinkAddressCommand),
+    FinalizedOffer(FinalizedOfferCommand),
     Empty,
 }
 
@@ -73,13 +74,23 @@ impl Default for AuctioneerCommand {
     }
 }
 
-// pls duplicate offercommand to tentativveoffecommand
-// internal command to be used by the auctioneer
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct OfferCommand {
+pub struct FinalizedOfferCommand {
     pub nft_key: NFTKey,
-    pub buyer_address: Option<String>,
+    pub buyer_address: String,
     pub price: f32,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TentativeOfferCommand {
+    pub nft_key: NFTKey,
+    pub price: f32,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LinkAddressCommand {
+    pub nft_key: NFTKey,
+    pub buyer_address: String,
 }
 
 impl ContextManager {
@@ -147,36 +158,67 @@ impl ContextManager {
         chat_id: ChatId,
         text: &str,
         openai_api: &OpenaiApi,
-    ) -> anyhow::Result<(String, Option<OfferCommand>)> {
+    ) -> anyhow::Result<(String, Option<FinalizedOfferCommand>)> {
         let context = Self::upsert_context(&mut self.contexts, self.nft_listings.clone(), chat_id);
         let message = context.chat(openai_api, text)?;
         let mut text = message.content.clone();
 
         context.chat_history.push(message);
-        let command = context.auctioneer_command(&text);
+        let cmd = context.get_auctioneer_cmd(&text);
 
-        if matches!(&command, &AuctioneerCommand::TentativeOffer(_))
+        if matches!(&cmd, &AuctioneerCommand::TentativeOffer(_))
             && context.buyer_address.is_none()
         {
             text += "\n\nPlease send me your public Ethereum address so I can send you the NFT."
         }
 
-        let offer = Self::execute_command(context, command);
+        let offered_nft_key_opt = Self::execute_command(context, cmd);
 
         if context.offer_nfts.len() > 0 {
             text += &format!(
-                "\n\nAlso note: The NFTs '{}' have been offer in another chat!",
+                "\n\nAlso note: The NFTs '{}' have been sold in another chat!",
                 context.offer_nfts.join(", ")
             );
             context.offer_nfts.clear();
         }
 
-        if let Some(ref offer) = offer {
-            self.remove_nft_for_chat(&offer.nft_key, chat_id);
-        }
 
-        Ok((text, offer))
+        let finalized_offer = match (offered_nft_key_opt.clone(), context.buyer_address.clone()) {
+            (Some(ref key), Some(ref buyer_address)) => Some(FinalizedOfferCommand {
+                nft_key: key.clone(),
+                buyer_address: buyer_address.clone(),
+                price: context.nfts.get(key).map(|data| data.listing.min_price).unwrap_or_default(),
+            }),
+            _ => None,
+        };
+        if let Some(ref key) = offered_nft_key_opt.clone() {
+            self.remove_nft_for_chat(key, chat_id);
+        }
+        Ok((text, finalized_offer))
     }
+
+    fn execute_command(context: &mut Context, command: AuctioneerCommand) -> Option<NFTKey> {
+        let mut key_opt = None;
+        match command {
+            AuctioneerCommand::TentativeOffer(tentative_offer) => {
+                context.nfts.get_mut(&tentative_offer.nft_key).map(|data| {
+                    data.state.tentative_offer = true;
+                });
+                if context.buyer_address.is_some() {
+                    key_opt = Some(tentative_offer.nft_key);
+                }
+            }
+            AuctioneerCommand::LinkAddress(link_address) => {
+                context.buyer_address = Some(link_address.buyer_address);
+                key_opt = Some(link_address.nft_key);
+            }
+            AuctioneerCommand::Empty | AuctioneerCommand::FinalizedOffer(_) => {
+                // No command to execute
+            }
+        }
+        key_opt
+    }
+
 
     pub fn remove_nft(&mut self, nft_key: &NFTKey) {
         self.nft_listings.remove(nft_key);
@@ -201,28 +243,6 @@ impl ContextManager {
         }
     }
 
-    // TODO: I don't know whether we actually need this? We just need a way to upstream all the way to lib for the sale...
-    fn execute_command(context: &mut Context, command: AuctioneerCommand) -> Option<OfferCommand> {
-        let mut offer_command = None;
-        match command {
-            AuctioneerCommand::TentativeOffer(sale) => {
-                context.nfts.get_mut(&sale.nft_key).map(|data| {
-                    data.state.tentative_offer = true;
-                });
-                if context.buyer_address.is_some() {
-                    offer_command = Some(sale);
-                }
-            }
-            AuctioneerCommand::FinalizeOffer(sale) => {
-                context.buyer_address = sale.buyer_address.clone();
-                offer_command = Some(sale);
-            }
-            AuctioneerCommand::Empty => {
-                // No command to execute
-            }
-        }
-        offer_command
-    }
 
     pub fn clear(&mut self, chat_id: ChatId) {
         self.contexts.remove(&chat_id);
@@ -341,17 +361,17 @@ impl Context {
     }
 
     // TODO: Zen: offer command should rather be named prepare sale or something
-    fn auctioneer_command(&self, input: &str) -> AuctioneerCommand {
-        if let Some(command) = self.handle_offer(input) {
-            AuctioneerCommand::TentativeOffer(command)
-        } else if let Some(offer_command) = self.handle_address_linking(input) {
-            AuctioneerCommand::FinalizeOffer(offer_command)
+    fn get_auctioneer_cmd(&self, input: &str) -> AuctioneerCommand {
+        if let Some(cmd) = self.handle_offer(input) {
+            AuctioneerCommand::TentativeOffer(cmd)
+        } else if let Some(link_address_cmd) = self.handle_address_linking(input) {
+            AuctioneerCommand::LinkAddress(link_address_cmd)
         } else {
             AuctioneerCommand::Empty
         }
     }
 
-    fn handle_offer(&self, input: &str) -> Option<OfferCommand> {
+    fn handle_offer(&self, input: &str) -> Option<TentativeOfferCommand> {
         if !input.starts_with("offer") {
             return None;
         }
@@ -381,9 +401,8 @@ impl Context {
                 .map(|nft_data| amount >= nft_data.listing.min_price)
                 .unwrap_or_default();
             if min_amount_reached {
-                let command = OfferCommand {
+                let command = TentativeOfferCommand {
                     nft_key: current_key.clone(),
-                    buyer_address: self.buyer_address.clone(),
                     price: amount,
                 };
                 return Some(command);
@@ -392,30 +411,23 @@ impl Context {
         None
     }
 
-    // todo jaxs: cleanup
-    fn handle_address_linking(&self, input: &str) -> Option<OfferCommand> {
-        if input.starts_with(ADDRESS_PASSKEY) {
-            let potential_address = input.strip_prefix(ADDRESS_PASSKEY).unwrap_or_default();
-            let address = &potential_address[..42];
-            if address.starts_with("0x") {
-                let buyer_address = address.to_string();
-                let offer_command = self.nfts.iter().find_map(|(current_key, data)| {
-                    if data.state.tentative_offer {
-                        Some(OfferCommand {
+    fn handle_address_linking(&self, input: &str) -> Option<LinkAddressCommand> {
+        input
+            .strip_prefix(ADDRESS_PASSKEY)
+            .and_then(|potential_address| {
+                let address = potential_address.get(..42).unwrap_or_default();
+                if address.starts_with("0x") {
+                    self.nfts.iter().find_map(|(current_key, data)| {
+                        data.state.tentative_offer.then(|| LinkAddressCommand {
                             nft_key: current_key.clone(),
-                            price: data.state.highest_bid,
-                            buyer_address: Some(buyer_address.clone()),
+                            buyer_address: address.to_string(),
                         })
-                    } else {
-                        None
-                    }
-                });
-                return offer_command;
-            } else {
-                println!("Provided address does not follow the Ethereum address format.");
-            }
-        }
-        None
+                    })
+                } else {
+                    println!("Invalid Ethereum address format.");
+                    None
+                }
+            })
     }
 }
 
