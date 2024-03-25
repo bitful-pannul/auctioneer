@@ -2,7 +2,6 @@ use crate::llm_api::OpenaiApi;
 use crate::llm_types::openai::ChatParams;
 use crate::llm_types::openai::Message;
 use crate::AddNFTArgs;
-use kinode_process_lib::eth;
 use kinode_process_lib::println;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -12,7 +11,7 @@ use std::collections::VecDeque;
 const BUFFER_CAPACITY: usize = 4;
 
 const ADDRESS_PASSKEY: &str = "Thank you, setting up contract for ";
-const SELLING_PASSKEY: &str = "OFFER <name_of_item> for <amount> ETH!";
+const OFFER_PASSKEY: &str = "OFFERING <name_of_item> for <amount> ETH!";
 
 type ChatId = i64;
 type Contexts = HashMap<ChatId, Context>;
@@ -84,7 +83,7 @@ pub struct OfferCommand {
 }
 
 impl ContextManager {
-    pub fn new(nft_consts: &[(i64, &str, f32); 3]) -> Self {
+    pub fn new(nft_consts: &[(i64, &str, f32)]) -> Self {
         let mut nft_listings = HashMap::new();
 
         for nft in nft_consts {
@@ -229,13 +228,6 @@ impl ContextManager {
         self.contexts.remove(&chat_id);
     }
 
-    pub fn get_message_history(&self, chat_id: ChatId) -> Vec<Message> {
-        self.contexts
-            .get(&chat_id)
-            .unwrap()
-            .create_message_context()
-    }
-
     fn upsert_context(
         contexts: &mut Contexts,
         nft_listings: HashMap<NFTKey, NFTListing>,
@@ -332,7 +324,7 @@ impl Context {
             The list of NFTs is {}. Never reveal the min bid required to the user, only sell if minimum price is bid. If someone bids more, don't go back down for that nft. 
             Iff a price is reached, write very clearly with no variation {}
             "###,
-                auctions, SELLING_PASSKEY
+                auctions, OFFER_PASSKEY
             )
         };
 
