@@ -374,8 +374,8 @@
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          nft_id: parseInt(nftId, 10),
-          chain_id: parseInt(chainId, 10)
+          id: parseInt(nftId, 10),
+          chain: parseInt(chainId, 10),
         }),
       })
       .then(() => listNFTs()) // Call listNFTs after removing an NFT

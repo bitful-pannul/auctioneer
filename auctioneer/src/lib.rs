@@ -166,7 +166,7 @@ fn remove_nft(body_bytes: &[u8]) -> HttpRequestOutcome {
     let nft_key: NFTKey = match serde_json::from_slice(body_bytes) {
         Ok(args) => args,
         Err(e) => {
-            println!("Failed to parse AddNFTArgs: {:?}", e);
+            println!("Failed to parse RemoveNFTArgs: {:?}", e);
             return HttpRequestOutcome::None;
         }
     };
@@ -252,9 +252,14 @@ fn _handle_internal_messages(
                             context_manager.clear(msg.chat.id);
                             "Reset succesful!".to_string()
                         } else {
-                            let (text, finalized_offer) =
-                                context_manager.chat(msg.chat.id, &text, &openai_api)?;
-                            if let Some(finalized_offer) = finalized_offer {
+
+                            let mut text = context_manager.chat(msg.chat.id, &text, &openai_api)?;
+                            let finalized_offer_opt = context_manager.act(msg.chat.id, &text);
+                            if let Some(additional_text) = &context_manager.additional_text(msg.chat.id) {
+                                text += additional_text;
+                            }
+
+                            if let Some(finalized_offer) = finalized_offer_opt {
                                 let valid_until = std::time::SystemTime::now()
                                     .duration_since(std::time::UNIX_EPOCH)
                                     .expect("Time went backwards")
