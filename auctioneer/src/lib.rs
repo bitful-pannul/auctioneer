@@ -31,6 +31,7 @@ struct InitialConfig {
     pub openai_key: String,
     pub telegram_bot_api_key: String,
     pub wallet_pk: String,
+    pub hosted_url: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -93,9 +94,7 @@ wit_bindgen::generate!({
 });
 
 fn config(body_bytes: &[u8]) -> Option<State> {
-    println!("in config method");
     let initial_config = serde_json::from_slice::<InitialConfig>(body_bytes).ok()?;
-    println!("got config: {:?}", initial_config);
     let _ = http::send_response(
         http::StatusCode::OK,
         Some(HashMap::from([(
@@ -104,7 +103,6 @@ fn config(body_bytes: &[u8]) -> Option<State> {
         )])),
         b"{\"message\": \"success\"}".to_vec(),
     );
-    println!("sent response");
     match State::fetch() {
         Some(mut state) => {
             state.config = initial_config;
@@ -307,7 +305,7 @@ fn _handle_internal_messages(
                                 )?;
 
                                 let link = format!(
-                                    "https://template.com/buy?nft={}&id={}&price={}&valid={}&uid={}&sig={}&chain={}",
+                                    "https://localhost:8080//buy?nft={}&id={}&price={}&valid={}&uid={}&sig={}&chain={}",
                                     sold.nft_key.address,
                                     sold.nft_key.id,
                                     sold.price,
@@ -453,7 +451,6 @@ fn init(our: Address) {
         }
 
         if message.source().process == "http_server:distro:sys" {
-            println!("got http thing");
             let state = handle_http_messages(&our, &message);
             let _ = modify_session(&our, &mut session, state);
         } else {

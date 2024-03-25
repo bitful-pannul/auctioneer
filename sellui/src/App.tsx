@@ -13,6 +13,7 @@ interface ConfigData {
   openai_key: string,
   telegram_bot_api_key: string,
   wallet_pk: string,
+  hosted_url: string,
 }
 
 interface NFT {
@@ -29,10 +30,16 @@ const InitialConfig: React.FC<{ onSubmit: (configData: ConfigData) => Promise<vo
   const [openaiKey, setOpenaiKey] = useState("");
   const [telegramKey, setTelegramKey] = useState("");
   const [walletPk, setWalletPk] = useState("");
+  const [hostedUrl, setHostedUrl] = useState("localhost:8080"); // add default hosted website.
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await onSubmit({ openai_key: openaiKey, telegram_bot_api_key: telegramKey, wallet_pk: walletPk });
+    await onSubmit({
+      openai_key: openaiKey,
+      telegram_bot_api_key: telegramKey,
+      wallet_pk: walletPk,
+      hosted_url: hostedUrl,
+    });
   };
 
   return (
@@ -85,7 +92,6 @@ const InitialConfig: React.FC<{ onSubmit: (configData: ConfigData) => Promise<vo
             onChange={e => setTelegramKey(e.target.value)}
           />
         </div>
-
         <div className="relative">
           <label className="block text-gray-700 text-sm font-bold mb-2">
             Private Wallet Address
@@ -110,6 +116,20 @@ const InitialConfig: React.FC<{ onSubmit: (configData: ConfigData) => Promise<vo
             placeholder="Private Wallet Address"
             value={walletPk}
             onChange={e => setWalletPk(e.target.value)}
+          />
+        </div>
+        <div className="relative mt-4">
+          <label className="block text-gray-700 text-sm font-bold mb-2">
+            Hosted URL (Optional)
+            <ExpandableSection>
+              <p>Where users will be redirected to buy the items. Can be left empty if not applicable.</p>
+            </ExpandableSection>
+          </label>
+          <input
+            className="appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+            placeholder="Hosted URL"
+            value={hostedUrl}
+            onChange={e => setHostedUrl(e.target.value)}
           />
         </div>
 
@@ -151,7 +171,7 @@ const NFTManager: React.FC = () => {
   const [sellPrompt, setSellPrompt] = useState("");
   const [minPrice, setMinPrice] = useState("");
 
-  const { writeContract } = useWriteContract()
+  const { writeContractAsync } = useWriteContract()
 
   const chainId = useChainId();
 
@@ -185,7 +205,7 @@ const NFTManager: React.FC = () => {
     }
     console.log("we on chain X prob should alert seller...");
 
-    writeContract({
+    await writeContractAsync({
       abi: erc721Abi,
       address: nftAddress as any,
       functionName: "approve",
@@ -264,6 +284,21 @@ const NFTManager: React.FC = () => {
             placeholder="NFT Contract Address"
             value={nftAddress}
             onChange={e => setNftAddress(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <label htmlFor="chain-id" className="block text-gray-700 text-sm font-bold mb-2">
+            Chain ID
+            <ExpandableSection>
+              What network nft you're selling. Change it with the button on the top right.
+            </ExpandableSection>
+          </label>
+          <input
+            id="chain-id"
+            disabled
+            className="appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline bg-gray-200"
+            value={chainId}
           />
         </div>
 
