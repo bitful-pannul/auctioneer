@@ -419,7 +419,7 @@ fn init(our: Address) {
     println!("initialize me!");
     let _ = http::serve_index_html(
         &our,
-        "ui",
+        "/ui/sell",
         true,
         false,
         vec![
@@ -431,6 +431,9 @@ fn init(our: Address) {
             "/listnfts",
         ],
     );
+
+    let _ = http::serve_index_html(&our, "/ui/buy", false, false, vec!["/", "/buy"]);
+
     let mut session: Option<Session> = None;
     loop {
         let Ok(message) = await_message() else {

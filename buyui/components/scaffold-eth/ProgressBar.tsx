@@ -18,7 +18,7 @@ export function ProgressBar() {
         #nprogress .bar {
           background: ${color};
           position: fixed;
-          z-index: 99999;
+          z-index: 1;
           top: 0;
           left: 0;
           width: 100%;
