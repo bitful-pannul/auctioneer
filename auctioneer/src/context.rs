@@ -2,15 +2,17 @@ use crate::llm_api::OpenaiApi;
 use crate::llm_types::openai::ChatParams;
 use crate::llm_types::openai::Message;
 use crate::AddNFTArgs;
-use kinode_process_lib::println;
+// use kinode_process_lib::println;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::collections::VecDeque;
+use alloy_primitives::Address as EthAddress;
+use std::str::FromStr;
 
 /// The maximum number of messages to keep in the chat history buffer
 const BUFFER_CAPACITY: usize = 4;
 
-const ADDRESS_PASSKEY: &str = "Thank you, setting up contract for ";
+const ADDRESS_PASSKEY: &str = "Thank you, reserving offer for ";
 const SOLD_PASSKEY: &str = "SOLD <name_of_item> for <amount> ETH!";
 
 type ChatId = i64;
@@ -27,9 +29,6 @@ struct Context {
     pub nfts: HashMap<NFTKey, NFTData>,
     pub buyer_address: Option<String>,
     chat_history: Buffer<Message>,
-    /// List of nfts that have been offered in other chats. 
-    /// Will be checked, and if any are sold, the user will be notified, then they will be cleared.
-    pub nfts_offered_in_other_chats: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
@@ -152,7 +151,6 @@ impl ContextManager {
                 state: NFTState::default(),
             });
         }
-        println!("The list of nft listings is now: {:?}", self.nft_listings);
     }
 
     pub fn chat(
@@ -166,15 +164,11 @@ impl ContextManager {
         Ok(message.content)
     }
 
-    pub fn act(&mut self, chat_id: ChatId, text: &str) -> Option<FinalizedOfferCommand> {
+    pub fn act(&mut self, chat_id: ChatId, llm_response: &str) -> Option<FinalizedOfferCommand> {
         let offered_nft_key = {
             let context = self.chat_context(chat_id);
-            context.process_input(text)
+            context.process_llm_response(llm_response)
         };
-    
-        if let Some(ref removed_nft_key) = offered_nft_key {
-            self.remove_nft_for_chat(removed_nft_key, chat_id);
-        }
     
         // Re-acquire the context to access the buyer address and potentially finalize the offer.
         let context = self.chat_context(chat_id);
@@ -193,18 +187,6 @@ impl ContextManager {
     }
 
     pub fn additional_text(&mut self, chat_id: ChatId,) -> Option<String> {
-        // Check whether other chats have initiated an nft, and notify the user
-        for (_, context) in &mut self.contexts {
-            if context.nfts_offered_in_other_chats.len() > 0 {
-                let offered_nfts_string = context.nfts_offered_in_other_chats.join(", ");
-                context.nfts_offered_in_other_chats.clear();
-                return Some(format!(
-                    "\n\nAlso note: The NFTs '{}' have been sold in another chat!",
-                    offered_nfts_string
-                ));
-            }
-        }
-
         // Check whether the user has offered an nft, and if so, check if they have a buyer address.
         // If not, ask them for their address.
         let context = self.chat_context(chat_id);
@@ -234,22 +216,6 @@ impl ContextManager {
         }
     }
 
-    fn remove_nft_for_chat(&mut self, nft_key: &NFTKey, chat_id: ChatId) {
-        let name = self
-            .nft_listings
-            .get(nft_key)
-            .map(|listing| listing.name.clone())
-            .unwrap_or_default();
-        self.nft_listings.remove(nft_key);
-
-        for (context_id, context) in self.contexts.iter_mut() {
-            context.nfts.remove(nft_key);
-            if *context_id != chat_id {
-                context.nfts_offered_in_other_chats.push(name.clone());
-            }
-        }
-    }
-
     pub fn clear(&mut self, chat_id: ChatId) {
         self.contexts.remove(&chat_id);
     }
@@ -272,7 +238,6 @@ impl ContextManager {
             nfts: nft_data,
             buyer_address: None,
             chat_history: Buffer::new(BUFFER_CAPACITY),
-            nfts_offered_in_other_chats: vec![],
         }
     }
 }
@@ -290,15 +255,15 @@ impl Context {
         Ok(answer)
     }
 
-    fn process_input(&mut self, input: &str) -> Option<NFTKey> {
-        if let Some(tentative_offer) = self.handle_offer(input) {
+    fn process_llm_response(&mut self, llm_response: &str) -> Option<NFTKey> {
+        if let Some(tentative_offer) = self.handle_offer(llm_response) {
             self.nfts.get_mut(&tentative_offer.nft_key).map(|data| {
                 data.state.tentative_offer = true;
             });
             if self.buyer_address.is_some() {
                 return Some(tentative_offer.nft_key);
             }
-        } else if let Some(link_address_cmd) = self.handle_address_linking(input) {
+        } else if let Some(link_address_cmd) = self.handle_address_linking(llm_response) {
             self.buyer_address = Some(link_address_cmd.buyer_address);
             return Some(link_address_cmd.nft_key);
         }
@@ -366,8 +331,6 @@ impl Context {
 
         let content = format!("{}{}{}", beginning, middle, end);
 
-        println!("Custom prompt looks like: {}", content);
-
         Message {
             role: "system".into(),
             content,
@@ -414,23 +377,25 @@ impl Context {
         None
     }
 
-    fn handle_address_linking(&self, input: &str) -> Option<LinkAddressCommand> {
-        input
-            .strip_prefix(ADDRESS_PASSKEY)
-            .and_then(|potential_address| {
-                let address = potential_address.get(..42).unwrap_or_default();
-                if address.starts_with("0x") {
-                    self.nfts.iter().find_map(|(current_key, data)| {
-                        data.state.tentative_offer.then(|| LinkAddressCommand {
+    fn handle_address_linking(&self, llm_response: &str) -> Option<LinkAddressCommand> {
+        let stripped_input = llm_response.strip_prefix(ADDRESS_PASSKEY).unwrap_or(llm_response);
+        match EthAddress::from_str(stripped_input) {
+            Ok(eth_address) => {
+                for (current_key, data) in self.nfts.iter() {
+                    if data.state.tentative_offer {
+                        return Some(LinkAddressCommand {
                             nft_key: current_key.clone(),
-                            buyer_address: address.to_string(),
-                        })
-                    })
-                } else {
-                    println!("Invalid Ethereum address format.");
-                    None
+                            buyer_address: eth_address.to_string(),
+                        });
+                    }
                 }
-            })
+                None
+            }
+            Err(_) => {
+                println!("Failed to parse EthAddress from input");
+                None
+            }
+        }
     }
 }
 
