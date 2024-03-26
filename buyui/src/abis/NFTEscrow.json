@@ -34,6 +34,7 @@
         ],
         "stateMutability": "payable",
         "type": "function",
-        "name": "buyNFT"
+        "name": "buyNFT",
+        "outputs": []
     }
 ]

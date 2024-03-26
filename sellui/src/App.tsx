@@ -7,7 +7,7 @@ import { WalletModal } from "./components/WalletModal";
 import Button from "antd/es/button";
 import { shorten } from "@did-network/dapp-sdk";
 
-const ESCROW_ADDRESS = "0x7b1431A0f20A92dD7E42A28f7Ba9FfF192F36DF3";
+const ESCROW_ADDRESS = "0xeB461C6ECB19dce8f3af49dB0f2bD7c9fa3edC8F";
 
 interface ConfigData {
   openai_key: string,
