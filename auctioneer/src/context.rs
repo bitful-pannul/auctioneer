@@ -164,10 +164,10 @@ impl ContextManager {
         Ok(message.content)
     }
 
-    pub fn act(&mut self, chat_id: ChatId, text: &str) -> Option<FinalizedOfferCommand> {
+    pub fn act(&mut self, chat_id: ChatId, llm_response: &str) -> Option<FinalizedOfferCommand> {
         let offered_nft_key = {
             let context = self.chat_context(chat_id);
-            context.process_input(text)
+            context.process_llm_response(llm_response)
         };
     
         // Re-acquire the context to access the buyer address and potentially finalize the offer.
@@ -255,15 +255,15 @@ impl Context {
         Ok(answer)
     }
 
-    fn process_input(&mut self, input: &str) -> Option<NFTKey> {
-        if let Some(tentative_offer) = self.handle_offer(input) {
+    fn process_llm_response(&mut self, llm_response: &str) -> Option<NFTKey> {
+        if let Some(tentative_offer) = self.handle_offer(llm_response) {
             self.nfts.get_mut(&tentative_offer.nft_key).map(|data| {
                 data.state.tentative_offer = true;
             });
             if self.buyer_address.is_some() {
                 return Some(tentative_offer.nft_key);
             }
-        } else if let Some(link_address_cmd) = self.handle_address_linking(input) {
+        } else if let Some(link_address_cmd) = self.handle_address_linking(llm_response) {
             self.buyer_address = Some(link_address_cmd.buyer_address);
             return Some(link_address_cmd.nft_key);
         }
@@ -377,8 +377,8 @@ impl Context {
         None
     }
 
-    fn handle_address_linking(&self, input: &str) -> Option<LinkAddressCommand> {
-        let stripped_input = input.strip_prefix(ADDRESS_PASSKEY).unwrap_or(input);
+    fn handle_address_linking(&self, llm_response: &str) -> Option<LinkAddressCommand> {
+        let stripped_input = llm_response.strip_prefix(ADDRESS_PASSKEY).unwrap_or(llm_response);
         match EthAddress::from_str(stripped_input) {
             Ok(eth_address) => {
                 for (current_key, data) in self.nfts.iter() {
