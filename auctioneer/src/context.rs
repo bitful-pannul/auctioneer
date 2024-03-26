@@ -3,10 +3,10 @@ use crate::llm_types::openai::ChatParams;
 use crate::llm_types::openai::Message;
 use crate::AddNFTArgs;
 // use kinode_process_lib::println;
+use alloy_primitives::Address as EthAddress;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::collections::VecDeque;
-use alloy_primitives::Address as EthAddress;
 use std::str::FromStr;
 
 /// The maximum number of messages to keep in the chat history buffer
@@ -169,7 +169,7 @@ impl ContextManager {
             let context = self.chat_context(chat_id);
             context.process_llm_response(llm_response)
         };
-    
+
         // Re-acquire the context to access the buyer address and potentially finalize the offer.
         let context = self.chat_context(chat_id);
         match (&offered_nft_key, &context.buyer_address) {
@@ -186,19 +186,15 @@ impl ContextManager {
         }
     }
 
-    pub fn additional_text(&mut self, chat_id: ChatId,) -> Option<String> {
+    pub fn additional_text(&mut self, chat_id: ChatId) -> Option<String> {
         // Check whether the user has offered an nft, and if so, check if they have a buyer address.
         // If not, ask them for their address.
         let context = self.chat_context(chat_id);
-        for (_, data) in &context.nfts {
-            if data.state.tentative_offer {
-                if context.buyer_address.is_none() {
-                    return Some(
-                        "\nPlease send me your public Ethereum address so I can send you the NFT."
-                            .to_string(),
-                    );
-                }
-            }
+        if context.tentative_offer_exists() && context.buyer_address.is_none() {
+            return Some(
+                "\nPlease send me your public Ethereum address so I can send you the NFT."
+                    .to_string(),
+            );
         }
         None
     }
@@ -270,8 +266,22 @@ impl Context {
         None
     }
 
+    fn tentative_offer_exists(&self) -> bool {
+        self.first_tentative_offer().is_some()
+    }
+
+    fn first_tentative_offer(&self) -> Option<NFTKey> {
+        self.nfts.iter().find_map(|(key, data)| {
+            if data.state.tentative_offer {
+                Some(key.clone())
+            } else {
+                None
+            }
+        })
+    }
+
     fn has_offer_item_without_buyer(&self) -> bool {
-        let tentatively_offer = self.nfts.values().any(|data| data.state.tentative_offer);
+        let tentatively_offer = self.tentative_offer_exists();
         let no_address = self.buyer_address.is_none();
         tentatively_offer && no_address
     }
@@ -292,7 +302,6 @@ impl Context {
             let nft_with_prices = self
                 .nfts
                 .iter()
-                .filter(|(_, data)| !data.state.tentative_offer)
                 .map(|(_, data)| {
                     let description = match &data.listing.description {
                         Some(description) => format!(", description: {}", description),
@@ -378,16 +387,16 @@ impl Context {
     }
 
     fn handle_address_linking(&self, llm_response: &str) -> Option<LinkAddressCommand> {
-        let stripped_input = llm_response.strip_prefix(ADDRESS_PASSKEY).unwrap_or(llm_response);
+        let stripped_input = llm_response
+            .strip_prefix(ADDRESS_PASSKEY)
+            .unwrap_or(llm_response);
         match EthAddress::from_str(stripped_input) {
             Ok(eth_address) => {
-                for (current_key, data) in self.nfts.iter() {
-                    if data.state.tentative_offer {
-                        return Some(LinkAddressCommand {
-                            nft_key: current_key.clone(),
-                            buyer_address: eth_address.to_string(),
-                        });
-                    }
+                if let Some(nft_key) = self.first_tentative_offer() {
+                    return Some(LinkAddressCommand {
+                        nft_key,
+                        buyer_address: eth_address.to_string(),
+                    });
                 }
                 None
             }
@@ -423,7 +432,7 @@ impl<T> Buffer<T> {
 
 fn create_chat_params(messages: Vec<Message>) -> ChatParams {
     let chat_params = ChatParams {
-        model: "gpt-4-1106-preview".into(), 
+        model: "gpt-4-1106-preview".into(),
         messages,
         max_tokens: Some(150),
         temperature: Some(0.2),
