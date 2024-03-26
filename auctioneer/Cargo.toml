@@ -19,6 +19,7 @@ serde_json = "1.0"
 wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen", rev = "21a46c7" }
 rand = "0.8.5"
 hex = "0.4.3"
+regex = "1.10.4"
 
 [lib]
 crate-type = ["cdylib"]

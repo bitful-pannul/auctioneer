@@ -2,11 +2,14 @@ use crate::llm_api::OpenaiApi;
 use crate::llm_types::openai::ChatParams;
 use crate::llm_types::openai::Message;
 use crate::AddNFTArgs;
-// use kinode_process_lib::println;
 use alloy_primitives::Address as EthAddress;
+use alloy_primitives::{
+    utils::{format_ether, parse_units},
+    U256,
+};
+use kinode_process_lib::println;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::str::FromStr;
 
 /// The maximum number of messages to keep in the chat history buffer
@@ -47,7 +50,7 @@ struct NFTData {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct NFTListing {
     pub name: String,
-    pub min_price: f32,
+    pub min_price: U256,
     pub address: String,
     pub description: Option<String>,
     pub custom_prompt: Option<String>,
@@ -55,7 +58,7 @@ pub struct NFTListing {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 struct NFTState {
-    pub highest_bid: f32,
+    pub highest_bid: U256,
     pub tentative_offer: bool,
 }
 
@@ -79,13 +82,13 @@ impl Default for AuctioneerCommand {
 pub struct FinalizedOfferCommand {
     pub nft_key: NFTKey,
     pub buyer_address: String,
-    pub price: f32,
+    pub price: U256,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TentativeOfferCommand {
     pub nft_key: NFTKey,
-    pub price: f32,
+    pub price: U256,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -95,7 +98,7 @@ pub struct LinkAddressCommand {
 }
 
 impl ContextManager {
-    pub fn new(nft_consts: &[(i64, &str, f32)]) -> Self {
+    pub fn new(nft_consts: &[(i64, &str, U256)]) -> Self {
         let mut nft_listings = HashMap::new();
 
         for nft in nft_consts {
@@ -141,7 +144,8 @@ impl ContextManager {
             address: nft_address,
             description: nft_description,
             custom_prompt: sell_prompt,
-            min_price,
+            // todo remove unwrap
+            min_price: parse_units(&min_price, "ether").unwrap().into(),
         };
 
         self.nft_listings.insert(key.clone(), listing.clone());
@@ -179,7 +183,7 @@ impl ContextManager {
                 price: context
                     .nfts
                     .get(offered_nft_key)
-                    .map(|data| data.listing.min_price)
+                    .map(|data| data.state.highest_bid)
                     .unwrap_or_default(),
             }),
             _ => None,
@@ -220,7 +224,7 @@ impl ContextManager {
         let mut nft_data = HashMap::new();
         for (nft_key, listing) in nft_listings {
             let nft_state = NFTState {
-                highest_bid: 0.0,
+                highest_bid: U256::ZERO,
                 tentative_offer: false,
             };
             let data = NFTData {
@@ -255,6 +259,9 @@ impl Context {
         if let Some(tentative_offer) = self.handle_offer(llm_response) {
             self.nfts.get_mut(&tentative_offer.nft_key).map(|data| {
                 data.state.tentative_offer = true;
+                if data.state.highest_bid < tentative_offer.price {
+                    data.state.highest_bid = tentative_offer.price;
+                }
             });
             if self.buyer_address.is_some() {
                 return Some(tentative_offer.nft_key);
@@ -297,7 +304,7 @@ impl Context {
         let beginning = "You are a a chatbot auctioneer selling NFTs. ";
 
         let middle = if self.has_offer_item_without_buyer() {
-            format!("The buyer you're chatting with has bought an NFT from you, but you don't have their ETH address. Please ask them for their public address and do not relent. Don't talk about anything else but their address. Iff they give something resembling a ETH address to you, repeat it with '{}<address>'", ADDRESS_PASSKEY)
+            format!("The buyer you're chatting with has bought an NFT from you, but you don't have their ETH address. Please ask them for their public address and do not relent. Don't talk about anything else but their address. If they give something resembling a ETH address to you, repeat it with '{}<address>'", ADDRESS_PASSKEY)
         } else {
             let nft_with_prices = self
                 .nfts
@@ -311,9 +318,13 @@ impl Context {
                         Some(custom_prompt) => format!(", and custom rules: {}", custom_prompt),
                         None => "".to_string(),
                     };
+                    println!("some min price: {:?}", format_ether(data.listing.min_price));
                     format!(
                         "\n- {} with min bid of {} ETH{}{}.\n",
-                        data.listing.name, data.listing.min_price, description, custom_prompt
+                        data.listing.name,
+                        format_ether(data.listing.min_price),
+                        description,
+                        custom_prompt
                     )
                 })
                 .collect::<Vec<String>>()
@@ -330,7 +341,7 @@ impl Context {
             The list of NFTs is {} 
             
             Never reveal the min bid required to the user, only sell if minimum price is bid. If someone bids more, don't go back down for that nft. 
-            Iff a price is reached, write very clearly with no variation {}
+            If a price is reached, write very clearly with no variation {}
             "###,
                 auctions, SOLD_PASSKEY
             )
@@ -360,10 +371,9 @@ impl Context {
 
         let amount_str = parts[1].trim_end_matches(" ETH!");
 
-        let amount = match amount_str.parse::<f32>() {
-            Ok(amount) => amount,
-            Err(_) => return None,
-        };
+        let amount: U256 = parse_units(amount_str, "ether")
+            .unwrap_or(U256::ZERO.into())
+            .into();
 
         if let Some((current_key, _)) = self
             .nfts
@@ -387,24 +397,19 @@ impl Context {
     }
 
     fn handle_address_linking(&self, llm_response: &str) -> Option<LinkAddressCommand> {
-        let stripped_input = llm_response
-            .strip_prefix(ADDRESS_PASSKEY)
-            .unwrap_or(llm_response);
-        match EthAddress::from_str(stripped_input) {
-            Ok(eth_address) => {
+        let re = regex::Regex::new(r"0x[a-fA-F0-9]{40}").unwrap();
+        if let Some(caps) = re.captures(llm_response) {
+            if let Some(matched) = caps.get(0) {
+                let eth_address = matched.as_str();
                 if let Some(nft_key) = self.first_tentative_offer() {
                     return Some(LinkAddressCommand {
                         nft_key,
                         buyer_address: eth_address.to_string(),
                     });
                 }
-                None
-            }
-            Err(_) => {
-                println!("Failed to parse EthAddress from input");
-                None
             }
         }
+        None
     }
 }
 

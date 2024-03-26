@@ -21,7 +21,7 @@ interface NFT {
   chain: number;
   name: string;
   address: string;
-  min_price: number;
+  min_price: string;
   description?: string;
   custom_prompt?: string;
 }
@@ -223,7 +223,7 @@ const NFTManager: React.FC = () => {
         chain_id: chainId,
         nft_description: nftDescription,
         sell_prompt: sellPrompt,
-        min_price: parseFloat(minPrice),
+        min_price: minPrice,
       }),
     });
     await listNFTs();
@@ -390,7 +390,7 @@ const NFTManager: React.FC = () => {
               <div>
                 <p className="font-bold">Name: {nft.name}</p>
                 <p>Address: {nft.address}</p>
-                <p>Min Price: {nft.min_price.toFixed(2)}</p>
+                <p>Min Price: {nft.min_price}</p>
                 <p>Description: {nft.description || "N/A"}</p>
                 <p>Custom Prompt: {nft.custom_prompt || "N/A"}</p>
               </div>

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { parseEther } from "viem/utils";
+import { parseEther, parse } from "viem/utils";
 import { useAccount, useReadContract, useWriteContract, useSwitchChain } from "wagmi";
-import { erc721Abi } from "viem";
+import { erc721Abi, formatEther, parseUnits } from "viem";
 
 import NFTEscrow from "./abis/NFTEscrow.json";
 import { Header } from "./components/layout/Header";
@@ -14,7 +14,7 @@ const ESCROW_ADDRESS = "0x7b1431A0f20A92dD7E42A28f7Ba9FfF192F36DF3";
 
 const App = () => {
   const { switchChain } = useSwitchChain();
-  const { writeContract, status, failureReason } = useWriteContract();
+  const { writeContractAsync, status, failureReason } = useWriteContract();
 
   const { address } = useAccount()
 
@@ -102,18 +102,26 @@ const App = () => {
     checkApproval();
   }, [nftAddress, nftId, chainId, switchChain, tokenURIdata, approvalData]);
 
-  const handleBuyNFT = () => {
-    console.log('let us try');
-    writeContract({
-      address: ESCROW_ADDRESS,
-      abi: NFTEscrow,
-      functionName: "buyNFT",
-      args: [nftAddress, BigInt(nftId), BigInt(price), BigInt(uid), BigInt(validUntil), signature],
-      value: parseEther(price),
-    });
-    console.log('done, status: ', status);
-    if (status === "error") {
-      setErrorMessage(failureReason);
+  // 40000000 WEI 
+  // 0.000004 ETH
+
+  const handleBuyNFT = async () => {
+    console.log('all values: ', nftAddress, nftId, price, uid, validUntil, signature);
+    console.log('value...: ', parseUnits(price, -18));
+    try {
+      const result = await writeContractAsync({
+        address: ESCROW_ADDRESS,
+        abi: NFTEscrow,
+        functionName: "buyNFT",
+        args: [nftAddress, BigInt(nftId), BigInt(price), BigInt(uid), BigInt(validUntil), signature],
+        value: parseUnits(price, -18),
+      });
+      console.log('fail reason is: ', failureReason);
+      console.log('Transaction result: ', result);
+    } catch (error) {
+      console.log('fail reason is: ', failureReason);
+      console.error('Transaction failed: ', error);
+      setErrorMessage(error.message || "An unknown error occurred");
       setTimeout(() => setErrorMessage(""), 5000);
     }
   };

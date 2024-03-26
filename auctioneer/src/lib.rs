@@ -1,4 +1,4 @@
-use alloy_primitives::Address as EthAddress;
+use alloy_primitives::{utils::parse_ether, utils::parse_units, Address as EthAddress};
 use alloy_signer::LocalWallet;
 use context::NFTKey;
 use frankenstein::{
@@ -77,7 +77,7 @@ struct AddNFTArgs {
     pub chain_id: u64,
     pub nft_description: Option<String>,
     pub sell_prompt: Option<String>,
-    pub min_price: f32,
+    pub min_price: String,
 }
 
 // TODO: Needed?
@@ -283,14 +283,19 @@ fn _handle_internal_messages(
                                     .as_secs()
                                     + 3600;
 
-                                let price_in_wei = (finalized_offer.price * 1e18 as f32) as u64;
+                                println!(
+                                    "info passed, address: {:?}, buyer: {:?}, price: {:?}",
+                                    &finalized_offer.nft_key.address.to_string(),
+                                    &finalized_offer.buyer_address.to_string(),
+                                    &finalized_offer.price.to_string()
+                                );
 
                                 let (uid, sig) = contracts::_create_offer(
                                     &session.wallet,
                                     &EthAddress::from_str(&finalized_offer.nft_key.address)?,
                                     finalized_offer.nft_key.id,
                                     &EthAddress::from_str(&finalized_offer.buyer_address)?,
-                                    price_in_wei,
+                                    finalized_offer.price,
                                     valid_until,
                                 )?;
 
@@ -298,10 +303,10 @@ fn _handle_internal_messages(
                                     "https://localhost:8080/buy?nft={}&id={}&price={}&valid={}&uid={}&sig={}&chain={}",
                                     finalized_offer.nft_key.address,
                                     finalized_offer.nft_key.id,
-                                    price_in_wei,
+                                    finalized_offer.price,
                                     valid_until,
                                     uid,
-                                    hex::encode(sig.as_bytes()),
+                                    format!("0x{}", hex::encode(sig.as_bytes())),
                                     finalized_offer.nft_key.chain
                                 );
                                 println!("Purchase link: {}", link);
