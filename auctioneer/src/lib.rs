@@ -80,7 +80,7 @@ struct AddNFTArgs {
     pub min_price: f32,
 }
 
-// TODO: Needed? 
+// TODO: Needed?
 /*
 /// offerings: (nft_address, nft_id) -> (rules prompt, min_price)
 type Offerings = HashMap<(Address, u64), (String, u64)>;
@@ -283,12 +283,14 @@ fn _handle_internal_messages(
                                     .as_secs()
                                     + 3600;
 
+                                let price_in_wei = (finalized_offer.price * 1e18 as f32) as u64;
+
                                 let (uid, sig) = contracts::_create_offer(
                                     &session.wallet,
                                     &EthAddress::from_str(&finalized_offer.nft_key.address)?,
                                     finalized_offer.nft_key.id,
                                     &EthAddress::from_str(&finalized_offer.buyer_address)?,
-                                    (finalized_offer.price * 1e18 as f32) as u64,
+                                    price_in_wei,
                                     valid_until,
                                 )?;
 
@@ -296,7 +298,7 @@ fn _handle_internal_messages(
                                     "https://localhost:8080/buy?nft={}&id={}&price={}&valid={}&uid={}&sig={}&chain={}",
                                     finalized_offer.nft_key.address,
                                     finalized_offer.nft_key.id,
-                                    finalized_offer.price,
+                                    price_in_wei,
                                     valid_until,
                                     uid,
                                     hex::encode(sig.as_bytes()),
