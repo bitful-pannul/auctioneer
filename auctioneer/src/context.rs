@@ -27,9 +27,6 @@ struct Context {
     pub nfts: HashMap<NFTKey, NFTData>,
     pub buyer_address: Option<String>,
     chat_history: Buffer<Message>,
-    /// List of nfts that have been offered in other chats. 
-    /// Will be checked, and if any are sold, the user will be notified, then they will be cleared.
-    pub nfts_offered_in_other_chats: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
@@ -173,7 +170,7 @@ impl ContextManager {
         };
     
         if let Some(ref removed_nft_key) = offered_nft_key {
-            self.remove_nft_for_chat(removed_nft_key, chat_id);
+            self.remove_nft_for_chat(removed_nft_key);
         }
     
         // Re-acquire the context to access the buyer address and potentially finalize the offer.
@@ -193,18 +190,6 @@ impl ContextManager {
     }
 
     pub fn additional_text(&mut self, chat_id: ChatId,) -> Option<String> {
-        // Check whether other chats have initiated an nft, and notify the user
-        for (_, context) in &mut self.contexts {
-            if context.nfts_offered_in_other_chats.len() > 0 {
-                let offered_nfts_string = context.nfts_offered_in_other_chats.join(", ");
-                context.nfts_offered_in_other_chats.clear();
-                return Some(format!(
-                    "\n\nAlso note: The NFTs '{}' have been sold in another chat!",
-                    offered_nfts_string
-                ));
-            }
-        }
-
         // Check whether the user has offered an nft, and if so, check if they have a buyer address.
         // If not, ask them for their address.
         let context = self.chat_context(chat_id);
@@ -234,19 +219,10 @@ impl ContextManager {
         }
     }
 
-    fn remove_nft_for_chat(&mut self, nft_key: &NFTKey, chat_id: ChatId) {
-        let name = self
-            .nft_listings
-            .get(nft_key)
-            .map(|listing| listing.name.clone())
-            .unwrap_or_default();
+    fn remove_nft_for_chat(&mut self, nft_key: &NFTKey) {
         self.nft_listings.remove(nft_key);
-
-        for (context_id, context) in self.contexts.iter_mut() {
+        for (_, context) in self.contexts.iter_mut() {
             context.nfts.remove(nft_key);
-            if *context_id != chat_id {
-                context.nfts_offered_in_other_chats.push(name.clone());
-            }
         }
     }
 
@@ -272,7 +248,6 @@ impl ContextManager {
             nfts: nft_data,
             buyer_address: None,
             chat_history: Buffer::new(BUFFER_CAPACITY),
-            nfts_offered_in_other_chats: vec![],
         }
     }
 }
@@ -467,5 +442,4 @@ fn create_chat_params(messages: Vec<Message>) -> ChatParams {
     chat_params
 }
 
-// TODO: Zen: Remove button is weird
 // TODO: Zen: Document everything

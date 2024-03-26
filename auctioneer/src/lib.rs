@@ -363,34 +363,40 @@ fn modify_session(
     session: &mut Option<Session>,
     http_request_outcome: HttpRequestOutcome,
 ) -> anyhow::Result<()> {
-    modify_state(http_request_outcome);
-    if let Some(state) = State::fetch() {
-        let Ok(openai_api) = spawn_openai_pkg(our.clone(), &state.config.openai_key) else {
-            return Err(anyhow::anyhow!("openAI couldn't boot."));
-        };
-        let Ok((tg_api, tg_worker)) =
-            init_tg_bot(our.clone(), &state.config.telegram_bot_api_key, None)
-        else {
-            return Err(anyhow::anyhow!("tg bot couldn't boot."));
-        };
+    modify_state(http_request_outcome.clone());
+    match http_request_outcome {
+        HttpRequestOutcome::Config(_) => {
+            if let Some(state) = State::fetch() {
+                let Ok(openai_api) = spawn_openai_pkg(our.clone(), &state.config.openai_key) else {
+                    return Err(anyhow::anyhow!("openAI couldn't boot."));
+                };
+                let Ok((tg_api, tg_worker)) =
+                    init_tg_bot(our.clone(), &state.config.telegram_bot_api_key, None)
+                else {
+                    return Err(anyhow::anyhow!("tg bot couldn't boot."));
+                };
 
-        let Ok(wallet) = state.config.wallet_pk.parse::<LocalWallet>() else {
-            return Err(anyhow::anyhow!("couldn't parse private key."));
-        };
-        *session = Some(Session {
-            tg_api,
-            tg_worker,
-            _wallet: wallet,
-            context_manager: state.context_manager,
-            openai_api,
-            _offerings: HashMap::new(),
-            _sold: HashMap::new(),
-        });
+                let Ok(wallet) = state.config.wallet_pk.parse::<LocalWallet>() else {
+                    return Err(anyhow::anyhow!("couldn't parse private key."));
+                };
+                *session = Some(Session {
+                    tg_api,
+                    tg_worker,
+                    _wallet: wallet,
+                    context_manager: state.context_manager,
+                    openai_api,
+                    _offerings: HashMap::new(),
+                    _sold: HashMap::new(),
+                });
+            }
+        }
+        _ => {}
     }
 
     Ok(())
 }
 
+#[derive(Clone)]
 enum HttpRequestOutcome {
     Config(InitialConfig),
     AddNFT(AddNFTArgs),
