@@ -41,12 +41,24 @@ struct State {
 }
 
 impl State {
+    fn new(config: InitialConfig) -> Self {
+        State {
+            config,
+            context_manager: ContextManager::new(&[]),
+        }
+    }
+
     fn fetch() -> Option<State> {
         if let Some(state_bytes) = get_state() {
             bincode::deserialize(&state_bytes).ok()
         } else {
             None
         }
+    }
+
+    fn save(&self) {
+        let serialized_state = bincode::serialize(self).expect("Failed to serialize state");
+        set_state(&serialized_state);
     }
 }
 
@@ -78,13 +90,6 @@ type Offerings = HashMap<(Address, u64), (String, u64)>;
 /// sold offerings: (nft_address, nft_id) -> (price, link)
 type Sold = HashMap<(Address, u64), (u64, String)>;
 
-/// This is temporary and will be replaced by a call to the TG API
-const NFTS: [(i64, &str, f32); 3] = [
-    (1, "Milady420", 0.3),
-    (2, "HUMAN ONE", 0.4),
-    (3, "Clock", 0.5),
-];
-
 wit_bindgen::generate!({
     path: "wit",
     world: "process",
@@ -93,8 +98,10 @@ wit_bindgen::generate!({
     },
 });
 
-fn config(body_bytes: &[u8]) -> Option<State> {
-    let initial_config = serde_json::from_slice::<InitialConfig>(body_bytes).ok()?;
+fn config(body_bytes: &[u8]) -> HttpRequestOutcome {
+    let Ok(initial_config) = serde_json::from_slice::<InitialConfig>(body_bytes) else {
+        return HttpRequestOutcome::None;
+    };
     let _ = http::send_response(
         http::StatusCode::OK,
         Some(HashMap::from([(
@@ -103,38 +110,17 @@ fn config(body_bytes: &[u8]) -> Option<State> {
         )])),
         b"{\"message\": \"success\"}".to_vec(),
     );
-    match State::fetch() {
-        Some(mut state) => {
-            state.config = initial_config;
-            return Some(state);
-        }
-        None => {
-            let state = State {
-                config: initial_config,
-                context_manager: ContextManager::new(&NFTS),
-            };
-            let serialized_state = bincode::serialize(&state).expect("Failed to serialize state");
-            set_state(&serialized_state);
-            return Some(state);
-        }
-    }
+    HttpRequestOutcome::Config(initial_config)
 }
 
-fn add_nft(body_bytes: &[u8]) -> Option<State> {
+fn add_nft(body_bytes: &[u8]) -> HttpRequestOutcome {
     let add_nft_args: AddNFTArgs = match serde_json::from_slice(body_bytes) {
         Ok(args) => args,
         Err(e) => {
             println!("Failed to parse AddNFTArgs: {:?}", e);
-            return None;
+            return HttpRequestOutcome::None;
         }
     };
-    let Some(mut state) = State::fetch() else {
-        println!("Failed to fetch state, need to have one first before adding NFTs");
-        return None;
-    };
-    let context_manager = &mut state.context_manager;
-    context_manager.add_nft(add_nft_args);
-
     let _ = http::send_response(
         http::StatusCode::OK,
         Some(HashMap::from([(
@@ -143,16 +129,13 @@ fn add_nft(body_bytes: &[u8]) -> Option<State> {
         )])),
         b"{\"message\": \"success\"}".to_vec(),
     );
-
-    set_state(&bincode::serialize(&state).expect("Failed to serialize state"));
-
-    return Some(state);
+    return HttpRequestOutcome::AddNFT(add_nft_args);
 }
 
-fn list_nfts() -> Option<State> {
+fn list_nfts() -> HttpRequestOutcome {
     let Some(state) = State::fetch() else {
         println!("Failed to fetch state, need to have one first before listing NFTs");
-        return None;
+        return HttpRequestOutcome::None;
     };
     let context_manager = &state.context_manager;
 
@@ -183,24 +166,17 @@ fn list_nfts() -> Option<State> {
         response_body.as_bytes().to_vec(),
     );
 
-    return None; // Don't return state because we don't want to change anything
+    HttpRequestOutcome::None
 }
 
-fn remove_nft(body_bytes: &[u8]) -> Option<State> {
+fn remove_nft(body_bytes: &[u8]) -> HttpRequestOutcome {
     let nft_key: NFTKey = match serde_json::from_slice(body_bytes) {
         Ok(args) => args,
         Err(e) => {
-            println!("Failed to parse AddNFTArgs: {:?}", e);
-            return None;
+            println!("Failed to parse RemoveNFTArgs: {:?}", e);
+            return HttpRequestOutcome::None;
         }
     };
-    let Some(mut state) = State::fetch() else {
-        println!("Failed to fetch state, need to have one first before removing NFTs");
-        return None;
-    };
-    let context_manager = &mut state.context_manager;
-    context_manager.remove_nft(&nft_key);
-
     let _ = http::send_response(
         http::StatusCode::OK,
         Some(HashMap::from([(
@@ -209,10 +185,7 @@ fn remove_nft(body_bytes: &[u8]) -> Option<State> {
         )])),
         b"{\"message\": \"success\"}".to_vec(),
     );
-
-    set_state(&bincode::serialize(&state).expect("Failed to serialize state"));
-
-    return Some(state);
+    HttpRequestOutcome::RemoveNFT(nft_key)
 }
 
 fn handle_internal_messages(
@@ -286,9 +259,15 @@ fn _handle_internal_messages(
                             context_manager.clear(msg.chat.id);
                             "Reset succesful!".to_string()
                         } else {
-                            let (text, sold) =
-                                context_manager.chat(msg.chat.id, &text, &openai_api)?;
-                            if let Some(sold) = sold {
+                            let mut text = context_manager.chat(msg.chat.id, &text, &openai_api)?;
+                            let finalized_offer_opt = context_manager.act(msg.chat.id, &text);
+                            if let Some(additional_text) =
+                                &context_manager.additional_text(msg.chat.id)
+                            {
+                                text += additional_text;
+                            }
+
+                            if let Some(finalized_offer) = finalized_offer_opt {
                                 let valid_until = std::time::SystemTime::now()
                                     .duration_since(std::time::UNIX_EPOCH)
                                     .expect("Time went backwards")
@@ -297,22 +276,22 @@ fn _handle_internal_messages(
 
                                 let (uid, sig) = contracts::_create_offer(
                                     &session._wallet,
-                                    &EthAddress::from_str(&sold.nft_key.address)?,
-                                    sold.nft_key.id,
-                                    &EthAddress::from_str(&sold.buyer_address.unwrap())?,
-                                    (sold.price * 1e18 as f32) as u64,
+                                    &EthAddress::from_str(&finalized_offer.nft_key.address)?,
+                                    finalized_offer.nft_key.id,
+                                    &EthAddress::from_str(&finalized_offer.buyer_address)?,
+                                    (finalized_offer.price * 1e18 as f32) as u64,
                                     valid_until,
                                 )?;
 
                                 let link = format!(
-                                    "https://localhost:8080//buy?nft={}&id={}&price={}&valid={}&uid={}&sig={}&chain={}",
-                                    sold.nft_key.address,
-                                    sold.nft_key.id,
-                                    sold.price,
+                                    "https://localhost:8080/buy?nft={}&id={}&price={}&valid={}&uid={}&sig={}&chain={}",
+                                    finalized_offer.nft_key.address,
+                                    finalized_offer.nft_key.id,
+                                    finalized_offer.price,
                                     valid_until,
                                     uid,
                                     hex::encode(sig.as_bytes()),
-                                    sold.nft_key.chain
+                                    finalized_offer.nft_key.chain
                                 );
                                 println!("Purchase link: {}", link);
                                 format!("buy it at the link: {}", &link)
@@ -337,7 +316,7 @@ fn _handle_internal_messages(
 
 call_init!(init);
 
-fn fetch_status(our: &Address, msg: &Message) -> Option<State> {
+fn fetch_status() -> HttpRequestOutcome {
     let (_state, status): (Option<State>, &str) = match State::fetch() {
         Some(state) => (Some(state), "manage-nfts"),
         None => (None, "config"),
@@ -345,21 +324,47 @@ fn fetch_status(our: &Address, msg: &Message) -> Option<State> {
 
     let Ok(response) = serde_json::to_vec(&serde_json::json!({ "status": status })) else {
         println!("Failed to serialize status: {:?}", status);
-        return None;
+        return HttpRequestOutcome::None;
     };
 
     let headers = HashMap::from([("Content-Type".to_string(), "application/json".to_string())]);
     let _ = http::send_response(http::StatusCode::OK, Some(headers), response);
 
-    return None;
+    return HttpRequestOutcome::None;
+}
+
+fn modify_state(http_request_outcome: HttpRequestOutcome) {
+    match http_request_outcome {
+        HttpRequestOutcome::Config(config) => {
+            State::fetch().unwrap_or_else(|| State::new(config)).save();
+        }
+        HttpRequestOutcome::AddNFT(add_nft_args) => {
+            if let Some(mut state) = State::fetch() {
+                state.context_manager.add_nft(add_nft_args);
+                state.save();
+            } else {
+                println!("Failed to fetch state, need to have one first before adding NFTs");
+            }
+        }
+        HttpRequestOutcome::RemoveNFT(nft_key) => {
+            if let Some(mut state) = State::fetch() {
+                state.context_manager.remove_nft(&nft_key);
+                state.save();
+            } else {
+                println!("Failed to fetch state, need to have one first before removing NFTs");
+            }
+        }
+        HttpRequestOutcome::None => {}
+    }
 }
 
 fn modify_session(
     our: &Address,
     session: &mut Option<Session>,
-    state: Option<State>,
+    http_request_outcome: HttpRequestOutcome,
 ) -> anyhow::Result<()> {
-    if let Some(state) = state {
+    modify_state(http_request_outcome);
+    if let Some(state) = State::fetch() {
         let Ok(openai_api) = spawn_openai_pkg(our.clone(), &state.config.openai_key) else {
             return Err(anyhow::anyhow!("openAI couldn't boot."));
         };
@@ -382,24 +387,40 @@ fn modify_session(
             _sold: HashMap::new(),
         });
     }
+
     Ok(())
 }
 
-fn handle_http_messages(our: &Address, message: &Message) -> Option<State> {
+enum HttpRequestOutcome {
+    Config(InitialConfig),
+    AddNFT(AddNFTArgs),
+    RemoveNFT(NFTKey),
+    None,
+}
+
+fn handle_http_messages(message: &Message) -> HttpRequestOutcome {
     match message {
         Message::Response { .. } => {
-            return None;
+            return HttpRequestOutcome::None;
         }
         Message::Request { ref body, .. } => {
-            let server_request = http::HttpServerRequest::from_bytes(body).ok()?;
-            let http_request = server_request.request()?;
+            let Ok(server_request) = http::HttpServerRequest::from_bytes(body) else {
+                return HttpRequestOutcome::None;
+            };
 
-            let body = get_blob()?;
+            let Some(http_request) = server_request.request() else {
+                return HttpRequestOutcome::None;
+            };
+
+            let Some(body) = get_blob() else {
+                return HttpRequestOutcome::None;
+            };
+
             let bound_path = http_request.bound_path(Some(PROCESS_ID));
             println!("on path: {:?}", bound_path);
             match bound_path {
                 "/status" => {
-                    return fetch_status(our, message);
+                    return fetch_status();
                 }
                 "/config" => {
                     return config(&body.bytes);
@@ -414,7 +435,7 @@ fn handle_http_messages(our: &Address, message: &Message) -> Option<State> {
                     return list_nfts();
                 }
                 _ => {
-                    return None;
+                    return HttpRequestOutcome::None;
                 }
             }
         }
@@ -451,8 +472,8 @@ fn init(our: Address) {
         }
 
         if message.source().process == "http_server:distro:sys" {
-            let state = handle_http_messages(&our, &message);
-            let _ = modify_session(&our, &mut session, state);
+            let http_request_outcome = handle_http_messages(&message);
+            let _ = modify_session(&our, &mut session, http_request_outcome);
         } else {
             match handle_internal_messages(&message, &mut session) {
                 Ok(()) => {}

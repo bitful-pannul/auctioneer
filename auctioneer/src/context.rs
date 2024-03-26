@@ -2,7 +2,6 @@ use crate::llm_api::OpenaiApi;
 use crate::llm_types::openai::ChatParams;
 use crate::llm_types::openai::Message;
 use crate::AddNFTArgs;
-use kinode_process_lib::eth;
 use kinode_process_lib::println;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -12,7 +11,7 @@ use std::collections::VecDeque;
 const BUFFER_CAPACITY: usize = 4;
 
 const ADDRESS_PASSKEY: &str = "Thank you, setting up contract for ";
-const SELLING_PASSKEY: &str = "OFFER <name_of_item> for <amount> ETH!";
+const SOLD_PASSKEY: &str = "SOLD <name_of_item> for <amount> ETH!";
 
 type ChatId = i64;
 type Contexts = HashMap<ChatId, Context>;
@@ -28,7 +27,9 @@ struct Context {
     pub nfts: HashMap<NFTKey, NFTData>,
     pub buyer_address: Option<String>,
     chat_history: Buffer<Message>,
-    pub offer_nfts: Vec<String>,
+    /// List of nfts that have been offered in other chats. 
+    /// Will be checked, and if any are sold, the user will be notified, then they will be cleared.
+    pub nfts_offered_in_other_chats: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
@@ -62,9 +63,10 @@ struct NFTState {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 enum AuctioneerCommand {
     /// Tentative sell is when the user has said they've offer an NFT, but we're not selling unless there's a buyer address
-    TentativeOffer(OfferCommand),
+    TentativeOffer(TentativeOfferCommand),
     /// Finalizing a sale means linking the buyer address to the NFT, then guaranteed offer
-    FinalizeOffer(OfferCommand),
+    LinkAddress(LinkAddressCommand),
+    FinalizedOffer(FinalizedOfferCommand),
     Empty,
 }
 
@@ -74,17 +76,27 @@ impl Default for AuctioneerCommand {
     }
 }
 
-// pls duplicate offercommand to tentativveoffecommand
-// internal command to be used by the auctioneer
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct OfferCommand {
+pub struct FinalizedOfferCommand {
     pub nft_key: NFTKey,
-    pub buyer_address: Option<String>,
+    pub buyer_address: String,
     pub price: f32,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TentativeOfferCommand {
+    pub nft_key: NFTKey,
+    pub price: f32,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LinkAddressCommand {
+    pub nft_key: NFTKey,
+    pub buyer_address: String,
+}
+
 impl ContextManager {
-    pub fn new(nft_consts: &[(i64, &str, f32); 3]) -> Self {
+    pub fn new(nft_consts: &[(i64, &str, f32)]) -> Self {
         let mut nft_listings = HashMap::new();
 
         for nft in nft_consts {
@@ -148,35 +160,71 @@ impl ContextManager {
         chat_id: ChatId,
         text: &str,
         openai_api: &OpenaiApi,
-    ) -> anyhow::Result<(String, Option<OfferCommand>)> {
-        let context = Self::upsert_context(&mut self.contexts, self.nft_listings.clone(), chat_id);
+    ) -> anyhow::Result<String> {
+        let context = self.chat_context(chat_id);
         let message = context.chat(openai_api, text)?;
-        let mut text = message.content.clone();
+        Ok(message.content)
+    }
 
-        context.chat_history.push(message);
-        let command = context.auctioneer_command(&text);
+    pub fn act(&mut self, chat_id: ChatId, text: &str) -> Option<FinalizedOfferCommand> {
+        let offered_nft_key = {
+            let context = self.chat_context(chat_id);
+            context.process_input(text)
+        };
+    
+        if let Some(ref removed_nft_key) = offered_nft_key {
+            self.remove_nft_for_chat(removed_nft_key, chat_id);
+        }
+    
+        // Re-acquire the context to access the buyer address and potentially finalize the offer.
+        let context = self.chat_context(chat_id);
+        match (&offered_nft_key, &context.buyer_address) {
+            (Some(offered_nft_key), Some(buyer_address)) => Some(FinalizedOfferCommand {
+                nft_key: offered_nft_key.clone(),
+                buyer_address: buyer_address.clone(),
+                price: context
+                    .nfts
+                    .get(offered_nft_key)
+                    .map(|data| data.listing.min_price)
+                    .unwrap_or_default(),
+            }),
+            _ => None,
+        }
+    }
 
-        if matches!(&command, &AuctioneerCommand::TentativeOffer(_))
-            && context.buyer_address.is_none()
-        {
-            text += "\n\nPlease send me your public Ethereum address so I can send you the NFT."
+    pub fn additional_text(&mut self, chat_id: ChatId,) -> Option<String> {
+        // Check whether other chats have initiated an nft, and notify the user
+        for (_, context) in &mut self.contexts {
+            if context.nfts_offered_in_other_chats.len() > 0 {
+                let offered_nfts_string = context.nfts_offered_in_other_chats.join(", ");
+                context.nfts_offered_in_other_chats.clear();
+                return Some(format!(
+                    "\n\nAlso note: The NFTs '{}' have been sold in another chat!",
+                    offered_nfts_string
+                ));
+            }
         }
 
-        let offer = Self::execute_command(context, command);
-
-        if context.offer_nfts.len() > 0 {
-            text += &format!(
-                "\n\nAlso note: The NFTs '{}' have been offer in another chat!",
-                context.offer_nfts.join(", ")
-            );
-            context.offer_nfts.clear();
+        // Check whether the user has offered an nft, and if so, check if they have a buyer address.
+        // If not, ask them for their address.
+        let context = self.chat_context(chat_id);
+        for (_, data) in &context.nfts {
+            if data.state.tentative_offer {
+                if context.buyer_address.is_none() {
+                    return Some(
+                        "\nPlease send me your public Ethereum address so I can send you the NFT."
+                            .to_string(),
+                    );
+                }
+            }
         }
+        None
+    }
 
-        if let Some(ref offer) = offer {
-            self.remove_nft_for_chat(&offer.nft_key, chat_id);
-        }
-
-        Ok((text, offer))
+    fn chat_context(&mut self, chat_id: ChatId) -> &mut Context {
+        self.contexts
+            .entry(chat_id)
+            .or_insert_with(|| Self::new_context(self.nft_listings.clone()))
     }
 
     pub fn remove_nft(&mut self, nft_key: &NFTKey) {
@@ -194,57 +242,16 @@ impl ContextManager {
             .unwrap_or_default();
         self.nft_listings.remove(nft_key);
 
-        for (context_id, value) in self.contexts.iter_mut() {
-            value.nfts.remove(nft_key);
+        for (context_id, context) in self.contexts.iter_mut() {
+            context.nfts.remove(nft_key);
             if *context_id != chat_id {
-                value.offer_nfts.push(name.clone());
+                context.nfts_offered_in_other_chats.push(name.clone());
             }
         }
-    }
-
-    // TODO: I don't know whether we actually need this? We just need a way to upstream all the way to lib for the sale...
-    fn execute_command(context: &mut Context, command: AuctioneerCommand) -> Option<OfferCommand> {
-        let mut offer_command = None;
-        match command {
-            AuctioneerCommand::TentativeOffer(sale) => {
-                context.nfts.get_mut(&sale.nft_key).map(|data| {
-                    data.state.tentative_offer = true;
-                });
-                if context.buyer_address.is_some() {
-                    offer_command = Some(sale);
-                }
-            }
-            AuctioneerCommand::FinalizeOffer(sale) => {
-                context.buyer_address = sale.buyer_address.clone();
-                offer_command = Some(sale);
-            }
-            AuctioneerCommand::Empty => {
-                // No command to execute
-            }
-        }
-        offer_command
     }
 
     pub fn clear(&mut self, chat_id: ChatId) {
         self.contexts.remove(&chat_id);
-    }
-
-    pub fn get_message_history(&self, chat_id: ChatId) -> Vec<Message> {
-        self.contexts
-            .get(&chat_id)
-            .unwrap()
-            .create_message_context()
-    }
-
-    fn upsert_context(
-        contexts: &mut Contexts,
-        nft_listings: HashMap<NFTKey, NFTListing>,
-        chat_id: ChatId,
-    ) -> &mut Context {
-        if !contexts.contains_key(&chat_id) {
-            contexts.insert(chat_id, Self::new_context(nft_listings));
-        }
-        contexts.get_mut(&chat_id).unwrap()
     }
 
     fn new_context(nft_listings: HashMap<NFTKey, NFTListing>) -> Context {
@@ -265,7 +272,7 @@ impl ContextManager {
             nfts: nft_data,
             buyer_address: None,
             chat_history: Buffer::new(BUFFER_CAPACITY),
-            offer_nfts: vec![],
+            nfts_offered_in_other_chats: vec![],
         }
     }
 }
@@ -278,7 +285,24 @@ impl Context {
         });
 
         let chat_params = create_chat_params(self.create_message_context());
-        openai_api.chat(chat_params)
+        let answer = openai_api.chat(chat_params)?;
+        self.chat_history.push(answer.clone());
+        Ok(answer)
+    }
+
+    fn process_input(&mut self, input: &str) -> Option<NFTKey> {
+        if let Some(tentative_offer) = self.handle_offer(input) {
+            self.nfts.get_mut(&tentative_offer.nft_key).map(|data| {
+                data.state.tentative_offer = true;
+            });
+            if self.buyer_address.is_some() {
+                return Some(tentative_offer.nft_key);
+            }
+        } else if let Some(link_address_cmd) = self.handle_address_linking(input) {
+            self.buyer_address = Some(link_address_cmd.buyer_address);
+            return Some(link_address_cmd.nft_key);
+        }
+        None
     }
 
     fn has_offer_item_without_buyer(&self) -> bool {
@@ -314,7 +338,7 @@ impl Context {
                         None => "".to_string(),
                     };
                     format!(
-                        "{} with min bid of {} ETH{}{}",
+                        "\n- {} with min bid of {} ETH{}{}.\n",
                         data.listing.name, data.listing.min_price, description, custom_prompt
                     )
                 })
@@ -329,10 +353,12 @@ impl Context {
 
             format!(
                 r###"
-            The list of NFTs is {}. Never reveal the min bid required to the user, only sell if minimum price is bid. If someone bids more, don't go back down for that nft. 
+            The list of NFTs is {} 
+            
+            Never reveal the min bid required to the user, only sell if minimum price is bid. If someone bids more, don't go back down for that nft. 
             Iff a price is reached, write very clearly with no variation {}
             "###,
-                auctions, SELLING_PASSKEY
+                auctions, SOLD_PASSKEY
             )
         };
 
@@ -348,19 +374,8 @@ impl Context {
         }
     }
 
-    // TODO: Zen: offer command should rather be named prepare sale or something
-    fn auctioneer_command(&self, input: &str) -> AuctioneerCommand {
-        if let Some(command) = self.handle_offer(input) {
-            AuctioneerCommand::TentativeOffer(command)
-        } else if let Some(offer_command) = self.handle_address_linking(input) {
-            AuctioneerCommand::FinalizeOffer(offer_command)
-        } else {
-            AuctioneerCommand::Empty
-        }
-    }
-
-    fn handle_offer(&self, input: &str) -> Option<OfferCommand> {
-        if !input.starts_with("offer") {
+    fn handle_offer(&self, input: &str) -> Option<TentativeOfferCommand> {
+        if !input.starts_with("SOLD") {
             return None;
         }
         let parts: Vec<&str> = input.split(" for ").collect();
@@ -389,9 +404,8 @@ impl Context {
                 .map(|nft_data| amount >= nft_data.listing.min_price)
                 .unwrap_or_default();
             if min_amount_reached {
-                let command = OfferCommand {
+                let command = TentativeOfferCommand {
                     nft_key: current_key.clone(),
-                    buyer_address: self.buyer_address.clone(),
                     price: amount,
                 };
                 return Some(command);
@@ -400,30 +414,23 @@ impl Context {
         None
     }
 
-    // todo jaxs: cleanup
-    fn handle_address_linking(&self, input: &str) -> Option<OfferCommand> {
-        if input.starts_with(ADDRESS_PASSKEY) {
-            let potential_address = input.strip_prefix(ADDRESS_PASSKEY).unwrap_or_default();
-            let address = &potential_address[..42];
-            if address.starts_with("0x") {
-                let buyer_address = address.to_string();
-                let offer_command = self.nfts.iter().find_map(|(current_key, data)| {
-                    if data.state.tentative_offer {
-                        Some(OfferCommand {
+    fn handle_address_linking(&self, input: &str) -> Option<LinkAddressCommand> {
+        input
+            .strip_prefix(ADDRESS_PASSKEY)
+            .and_then(|potential_address| {
+                let address = potential_address.get(..42).unwrap_or_default();
+                if address.starts_with("0x") {
+                    self.nfts.iter().find_map(|(current_key, data)| {
+                        data.state.tentative_offer.then(|| LinkAddressCommand {
                             nft_key: current_key.clone(),
-                            price: data.state.highest_bid,
-                            buyer_address: Some(buyer_address.clone()),
+                            buyer_address: address.to_string(),
                         })
-                    } else {
-                        None
-                    }
-                });
-                return offer_command;
-            } else {
-                println!("Provided address does not follow the Ethereum address format.");
-            }
-        }
-        None
+                    })
+                } else {
+                    println!("Invalid Ethereum address format.");
+                    None
+                }
+            })
     }
 }
 
@@ -451,8 +458,7 @@ impl<T> Buffer<T> {
 
 fn create_chat_params(messages: Vec<Message>) -> ChatParams {
     let chat_params = ChatParams {
-        model: "gpt-4-1106-preview".into(), // TODO: Zen:
-        // model: "gpt-3.5-turbo".into(),
+        model: "gpt-4-1106-preview".into(), 
         messages,
         max_tokens: Some(150),
         temperature: Some(0.2),
@@ -460,3 +466,6 @@ fn create_chat_params(messages: Vec<Message>) -> ChatParams {
     };
     chat_params
 }
+
+// TODO: Zen: Remove button is weird
+// TODO: Zen: Document everything
