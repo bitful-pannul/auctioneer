@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0"
 alloy-signer = { git = "https://github.com/alloy-rs/alloy", rev = "b7eb33d", features = ["eip712"] }
-alloy-primitives = "0.6.3"
+alloy-primitives = "0.6.4"
 alloy-sol-types = "0.6.3"
 alloy-consensus = { git = "https://github.com/alloy-rs/alloy", rev = "b7eb33d" }
 alloy-network = { git = "https://github.com/alloy-rs/alloy", rev = "b7eb33d" }

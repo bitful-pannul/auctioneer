@@ -1,12 +1,13 @@
-use alloy_primitives::Address as EthAddress;
+use alloy_primitives::{Address as EthAddress, LogData, U256};
 use alloy_signer::LocalWallet;
-use context::NFTKey;
 use frankenstein::{
     ChatId, SendMessageParams, TelegramApi, UpdateContent::ChannelPost as TgChannelPost,
     UpdateContent::Message as TgMessage,
 };
 use kinode_process_lib::{
-    await_message, call_init, get_blob, get_state, http, println, set_state, Address, Message,
+    await_message, call_init,
+    eth::{self, Filter},
+    get_blob, get_state, http, println, set_state, Address, Message,
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, str::FromStr};
@@ -448,6 +449,51 @@ fn handle_http_messages(message: &Message) -> HttpRequestOutcome {
     }
 }
 
+fn handle_eth_message(message: &Message) -> anyhow::Result<HttpRequestOutcome> {
+    match message {
+        Message::Response { .. } => {
+            return Err(anyhow::anyhow!("unexpected Response: {:?}", message));
+        }
+        Message::Request {
+            ref source,
+            ref body,
+            ..
+        } => {
+            let Ok(eth_result) = serde_json::from_slice::<eth::EthSubResult>(body) else {
+                return Err(anyhow::anyhow!("got invalid message"));
+            };
+
+            match eth_result {
+                Ok(eth::EthSub { result, id }) => {
+                    if let eth::SubscriptionResult::Log(log) = result {
+                        let log: LogData = log;
+                        // let update = contracts::NFTPurchased::decode_log(&*log)?;
+
+                        let chain = match id {
+                            1 => 11155111,
+                            2 => 10,
+                            3 => 8453,
+                            _ => 0,
+                        };
+
+                        println!(
+                            "sell event with all of these: {:?}, {:?}, {:?}, {:?}",
+                            nft, nft_id, buyer, price
+                        );
+                        return Ok(HttpRequestOutcome::RemoveNFT(NFTKey {
+                            address: nft.to_string(),
+                            id: nft_id.to::<u64>(),
+                            chain,
+                        }));
+                    }
+                }
+                _ => return Ok(HttpRequestOutcome::None),
+            }
+        }
+    }
+    Ok(HttpRequestOutcome::None)
+}
+
 /// on startup, the auctioneer will need a tg token, open_ai token, and a private key holding the NFTs.
 fn init(our: Address) {
     println!("initialize me!");
@@ -466,6 +512,24 @@ fn init(our: Address) {
         ],
     );
 
+    // index multiple chains? slightly painful....
+    let escrow_address =
+        EthAddress::from_str("0x7b1431A0f20A92dD7E42A28f7Ba9FfF192F36DF3").unwrap();
+
+    let sep = eth::Provider::new(11155111, 5);
+    let op = eth::Provider::new(10, 5);
+    let base = eth::Provider::new(8453, 5);
+
+    let filter = eth::Filter::new()
+        .address(escrow_address)
+        .from_block(0)
+        .to_block(eth::BlockNumberOrTag::Latest)
+        .events(vec!["NFTPurchased(address,uint256,address,uint256)"]);
+
+    let _ = sep.subscribe(1, filter.clone());
+    let _ = op.subscribe(2, filter.clone());
+    let _ = base.subscribe(3, filter);
+
     let _ = http::serve_ui(&our, "ui/buy/", false, false, vec!["/buy"]);
 
     let mut session: Option<Session> = None;
@@ -478,8 +542,11 @@ fn init(our: Address) {
         }
 
         if message.source().process == "http_server:distro:sys" {
-            let http_request_outcome = handle_http_messages(&message);
-            let _ = modify_session(&our, &mut session, http_request_outcome);
+            let outcome = handle_http_messages(&message);
+            let _ = modify_session(&our, &mut session, outcome);
+        } else if message.source().process == "eth:distro:sys" {
+            let outcome = handle_eth_message(&message);
+            let _ = modify_session(&our, &mut session, outcome);
         } else {
             match handle_internal_messages(&message, &mut session) {
                 Ok(()) => {}
