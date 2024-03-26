@@ -14,7 +14,7 @@ const ESCROW_ADDRESS = "0x7b1431A0f20A92dD7E42A28f7Ba9FfF192F36DF3";
 
 const App = () => {
   const { switchChain } = useSwitchChain();
-  const { writeContract, status } = useWriteContract();
+  const { writeContract, status, failureReason } = useWriteContract();
   const { address } = useAccount()
 
   const [show, setShow] = useState(false)
@@ -22,6 +22,7 @@ const App = () => {
   const toggleModal = (e: boolean) => {
     setShow(e)
   }
+  const [errorMessage, setErrorMessage] = useState("");
 
   const [searchParams, setSearchParams] = useState(new URLSearchParams(window.location.search));
   const [nftAddress, setNftAddress] = useState(searchParams.get("nft") || "");
@@ -84,6 +85,10 @@ const App = () => {
       value: parseEther(price),
     });
     console.log('done, status: ', status);
+    if (status === "error") {
+      setErrorMessage(failureReason);
+      setTimeout(() => setErrorMessage(""), 5000);
+    }
   };
 
 
@@ -144,6 +149,11 @@ const App = () => {
             <input type="text" value={signature} onChange={(e) => setSignature(e.target.value)} placeholder="Signature" className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" />
             <button onClick={handleBuyNFT} className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-700 disabled:bg-blue-300 transition duration-300 ease-in-out">Buy NFT</button>
           </div>
+          {errorMessage && (
+            <div className="px-4 py-2 my-2 text-white bg-red-500 rounded">
+              {errorMessage}
+            </div>
+          )}
           {/* {txData && (
             <div>
               <h2>Transaction Data:</h2>
