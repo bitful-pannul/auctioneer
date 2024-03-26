@@ -30,7 +30,8 @@ const PROCESS_ID: &str = "auctioneer:auctioneer:template.os";
 struct InitialConfig {
     pub openai_key: String,
     pub telegram_bot_api_key: String,
-    pub private_wallet_address: String,
+    pub wallet_pk: String,
+    pub hosted_url: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -137,18 +138,24 @@ fn list_nfts() -> HttpRequestOutcome {
         return HttpRequestOutcome::None;
     };
     let context_manager = &state.context_manager;
-    let nft_listing_keys: Vec<_> = context_manager
+
+    let nft_listings: Vec<_> = context_manager
         .nft_listings
-        .keys()
-        .map(|key| format!("{}:{}", key.id, key.chain))
-        .collect();
-    let nft_listing_values: Vec<_> = context_manager.nft_listings.values().cloned().collect();
-    let response_body = serde_json::json!({
-        "message": "success",
-        "nft_listings_keys": nft_listing_keys,
-        "nft_listings_values": nft_listing_values,
-    })
-    .to_string();
+        .iter()
+        .map(|(key, value)| {
+            serde_json::json!({
+                "id": key.id,
+                "chain": key.chain,
+                "name": value.name,
+                "min_price": value.min_price,
+                "address": value.address,
+                "description": value.description,
+                "custom_prompt": value.custom_prompt,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let response_body = serde_json::to_string(&nft_listings).unwrap_or_else(|_| "[]".to_string());
 
     let _ = http::send_response(
         http::StatusCode::OK,
@@ -252,10 +259,11 @@ fn _handle_internal_messages(
                             context_manager.clear(msg.chat.id);
                             "Reset succesful!".to_string()
                         } else {
-
                             let mut text = context_manager.chat(msg.chat.id, &text, &openai_api)?;
                             let finalized_offer_opt = context_manager.act(msg.chat.id, &text);
-                            if let Some(additional_text) = &context_manager.additional_text(msg.chat.id) {
+                            if let Some(additional_text) =
+                                &context_manager.additional_text(msg.chat.id)
+                            {
                                 text += additional_text;
                             }
 
@@ -276,7 +284,7 @@ fn _handle_internal_messages(
                                 )?;
 
                                 let link = format!(
-                                    "https://template.com/buy?nft={}&id={}&price={}&valid={}&uid={}&sig={}&chain={}",
+                                    "https://localhost:8080/buy?nft={}&id={}&price={}&valid={}&uid={}&sig={}&chain={}",
                                     finalized_offer.nft_key.address,
                                     finalized_offer.nft_key.id,
                                     finalized_offer.price,
@@ -366,7 +374,7 @@ fn modify_session(
             return Err(anyhow::anyhow!("tg bot couldn't boot."));
         };
 
-        let Ok(wallet) = state.config.private_wallet_address.parse::<LocalWallet>() else {
+        let Ok(wallet) = state.config.wallet_pk.parse::<LocalWallet>() else {
             return Err(anyhow::anyhow!("couldn't parse private key."));
         };
         *session = Some(Session {
@@ -409,6 +417,7 @@ fn handle_http_messages(message: &Message) -> HttpRequestOutcome {
             };
 
             let bound_path = http_request.bound_path(Some(PROCESS_ID));
+            println!("on path: {:?}", bound_path);
             match bound_path {
                 "/status" => {
                     return fetch_status();
@@ -436,9 +445,9 @@ fn handle_http_messages(message: &Message) -> HttpRequestOutcome {
 /// on startup, the auctioneer will need a tg token, open_ai token, and a private key holding the NFTs.
 fn init(our: Address) {
     println!("initialize me!");
-    let _ = http::serve_index_html(
+    let _ = http::serve_ui(
         &our,
-        "ui",
+        "ui/sell/",
         true,
         false,
         vec![
@@ -450,6 +459,9 @@ fn init(our: Address) {
             "/listnfts",
         ],
     );
+
+    let _ = http::serve_ui(&our, "ui/buy/", false, false, vec!["/buy"]);
+
     let mut session: Option<Session> = None;
     loop {
         let Ok(message) = await_message() else {
