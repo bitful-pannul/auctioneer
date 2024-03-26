@@ -320,6 +320,7 @@ fn _handle_internal_messages(
             println!("error from tg worker: {:?}", e);
         }
     }
+    state.save();
     Ok(())
 }
 
@@ -395,7 +396,7 @@ fn update_state_and_session(
 ) -> anyhow::Result<()> {
     modify_state(http_request_outcome.clone());
     if let Some(state) = State::fetch() {
-        if session.is_none() || matches!(http_request_outcome, HttpRequestOutcome::Config(_)) {
+        if matches!(http_request_outcome, HttpRequestOutcome::Config(_)) {
             *session = generate_session(our, &state).ok();
         }
     }
@@ -475,7 +476,12 @@ fn init(our: Address) {
 
     let _ = http::serve_ui(&our, "ui/buy/", false, false, vec!["/buy"]);
 
-    let mut session: Option<Session> = None;
+    let mut session: Option<Session> = if let Some(state) = State::fetch() {
+        generate_session(&our, &state).ok()
+    } else {
+        None
+    };
+
     loop {
         let Ok(message) = await_message() else {
             continue;

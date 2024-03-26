@@ -149,7 +149,6 @@ impl ContextManager {
                 state: NFTState::default(),
             });
         }
-        println!("The list of nft listings is now: {:?}", self.nft_listings);
     }
 
     pub fn chat(
@@ -168,7 +167,6 @@ impl ContextManager {
             let context = self.chat_context(chat_id);
             context.process_input(text)
         };
-        println!("Offered nft key: {:?}", offered_nft_key);
     
         // Re-acquire the context to access the buyer address and potentially finalize the offer.
         let context = self.chat_context(chat_id);
@@ -257,7 +255,6 @@ impl Context {
 
     fn process_input(&mut self, input: &str) -> Option<NFTKey> {
         if let Some(tentative_offer) = self.handle_offer(input) {
-            println!("Tentative offer");
             self.nfts.get_mut(&tentative_offer.nft_key).map(|data| {
                 data.state.tentative_offer = true;
             });
@@ -265,7 +262,6 @@ impl Context {
                 return Some(tentative_offer.nft_key);
             }
         } else if let Some(link_address_cmd) = self.handle_address_linking(input) {
-            println!("Address linked! {:?}", link_address_cmd.buyer_address.clone());
             self.buyer_address = Some(link_address_cmd.buyer_address);
             return Some(link_address_cmd.nft_key);
         }
@@ -333,8 +329,6 @@ impl Context {
 
         let content = format!("{}{}{}", beginning, middle, end);
 
-        // println!("Custom prompt looks like: {}", content);
-
         Message {
             role: "system".into(),
             content,
@@ -381,6 +375,8 @@ impl Context {
         None
     }
 
+    // TODO: Zen: We're taking in the user input, yet handling the llm output
+    // TODO: Zen: Why doesn't the llm even output things that are correct? 
     fn handle_address_linking(&self, input: &str) -> Option<LinkAddressCommand> {
         input
             .strip_prefix(ADDRESS_PASSKEY)
