@@ -15,6 +15,7 @@ const ESCROW_ADDRESS = "0x7b1431A0f20A92dD7E42A28f7Ba9FfF192F36DF3";
 const App = () => {
   const { switchChain } = useSwitchChain();
   const { writeContract, status, failureReason } = useWriteContract();
+
   const { address } = useAccount()
 
   const [show, setShow] = useState(false)
@@ -32,15 +33,23 @@ const App = () => {
   const [validUntil, setValidUntil] = useState(searchParams.get("valid") || "");
   const [signature, setSignature] = useState(searchParams.get("sig") || "");
   const [chainId, setChainId] = useState(searchParams.get("chain") || null);
+  const [checkboxState, setCheckboxState] = useState(false);
 
   const [tokenURI, setTokenURI] = useState("");
   const [metadata, setMetadata] = useState(null);
   const [metadataVisible, setMetadataVisible] = useState(false);
 
   const { data: tokenURIdata, isError, isLoading } = useReadContract({
-    address: nftAddress as any,
+    address: nftAddress,
     abi: erc721Abi,
     functionName: "tokenURI",
+    args: [BigInt(nftId)],
+  });
+
+  const { data: approvalData } = useReadContract({
+    address: nftAddress,
+    abi: erc721Abi,
+    functionName: "getApproved",
     args: [BigInt(nftId)],
   });
 
@@ -49,9 +58,23 @@ const App = () => {
     if (chainId) {
       switchChain({ chainId: parseInt(chainId) });
     }
+    console.log("useEffect triggered");
+    console.log("tokenURIdata:", tokenURIdata);
+    console.log("approvalData:", approvalData);
+    console.log("nftAddress:", nftAddress);
+    console.log("nftId:", nftId);
 
-    if (tokenURIdata) {
-      const fetchMetadata = async () => {
+    const checkApproval = async () => {
+      if (nftAddress && nftId && approvalData) {
+        const isApproved = approvalData.toString();
+        setCheckboxState(isApproved === ESCROW_ADDRESS);
+      }
+    }
+
+    const fetchMetadata = async () => {
+      // Ensure this runs only when tokenURIdata is available
+      if (tokenURIdata) {
+        console.log("Fetching metadata");
         try {
           let resolvedTokenURI = tokenURIdata.toString();
           if (resolvedTokenURI.startsWith("ipfs://")) {
@@ -60,6 +83,7 @@ const App = () => {
 
           const response = await fetch(resolvedTokenURI);
           const metadata = await response.json();
+          console.log("Fetched metadata:", metadata);
           setMetadata(metadata);
 
           let imageURL = metadata.image;
@@ -70,10 +94,13 @@ const App = () => {
         } catch (error) {
           console.error("Failed to fetch metadata:", error);
         }
-      };
-      fetchMetadata();
-    }
-  }, [nftAddress, nftId, chainId, switchChain]);
+      }
+    };
+
+
+    fetchMetadata();
+    checkApproval();
+  }, [nftAddress, nftId, chainId, switchChain, tokenURIdata, approvalData]);
 
   const handleBuyNFT = () => {
     console.log('let us try');
@@ -125,15 +152,17 @@ const App = () => {
           {tokenURI && (
             <div className="my-4">
               <div
-                className="my-4 flex items-center cursor-pointer"
+                className="flex items-center cursor-pointer"
                 onClick={() => setMetadataVisible(!metadataVisible)}
               >
                 <span className="text-lg font-bold">NFT Metadata</span>
                 <span className="ml-2">{metadataVisible ? "▼" : "▶"}</span>
               </div>
               {metadataVisible && metadata && (
-                <div className="mt-2">
-                  <pre>{JSON.stringify(metadata, null, 2)}</pre>
+                <div className="overflow-auto p-4 max-h-96 w-full">
+                  <div className="max-w-full bg-white shadow-lg rounded-lg p-5">
+                    <pre className="whitespace-pre-wrap text-sm">{JSON.stringify(metadata, null, 2)}</pre>
+                  </div>
                 </div>
               )}
             </div>
@@ -147,6 +176,19 @@ const App = () => {
             <input type="text" value={uid} onChange={(e) => setUid(e.target.value)} placeholder="UID" className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" />
             <input type="number" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} placeholder="Valid Until" className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" />
             <input type="text" value={signature} onChange={(e) => setSignature(e.target.value)} placeholder="Signature" className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <div>
+              <input
+                type="checkbox"
+                checked={checkboxState}
+                readOnly
+              />
+              <label>Escrow is allowed to transact NFT</label>
+            </div>
+            {!checkboxState && (
+              <div className="px-4 py-2 my-2 text-white bg-red-500 rounded">
+                This NFT might not be approved for the escrow. Please approve it before proceeding.
+              </div>
+            )}
             <button onClick={handleBuyNFT} className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-700 disabled:bg-blue-300 transition duration-300 ease-in-out">Buy NFT</button>
           </div>
           {errorMessage && (
