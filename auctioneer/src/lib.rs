@@ -229,7 +229,7 @@ fn _handle_internal_messages(
 
     let State {
         context_manager,
-        config: _, // TODO: Bitful: you can use it here :D
+        config,
     } = state;
 
     match serde_json::from_slice(body)? {
