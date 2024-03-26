@@ -229,7 +229,7 @@ fn _handle_internal_messages(
 
     let State {
         context_manager,
-        config,
+        config: _,
     } = state;
 
     match serde_json::from_slice(body)? {
