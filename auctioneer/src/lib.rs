@@ -65,12 +65,8 @@ impl State {
 struct Session {
     tg_api: Api,
     tg_worker: Address,
-    _wallet: LocalWallet,
-    context_manager: ContextManager,
+    wallet: LocalWallet,
     openai_api: OpenaiApi,
-    // TODO: Zena: Offerings and sold should probably go into context_manager.
-    _offerings: Offerings,
-    _sold: Sold,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -84,11 +80,14 @@ struct AddNFTArgs {
     pub min_price: f32,
 }
 
+// TODO: Needed? 
+/*
 /// offerings: (nft_address, nft_id) -> (rules prompt, min_price)
 type Offerings = HashMap<(Address, u64), (String, u64)>;
 
 /// sold offerings: (nft_address, nft_id) -> (price, link)
 type Sold = HashMap<(Address, u64), (u64, String)>;
+ */
 
 wit_bindgen::generate!({
     path: "wit",
@@ -193,6 +192,11 @@ fn handle_internal_messages(
     session: &mut Option<Session>,
 ) -> anyhow::Result<()> {
     let Some(session) = session else {
+        println!("Session not found! Returning");
+        return Ok(());
+    };
+    let Some(mut state) = State::fetch() else {
+        println!("State not found! Returning");
         return Ok(());
     };
 
@@ -205,7 +209,7 @@ fn handle_internal_messages(
             ref body,
             ..
         } => {
-            return _handle_internal_messages(source, body, session);
+            return _handle_internal_messages(source, body, session, &mut state);
         }
     }
 }
@@ -214,14 +218,19 @@ fn _handle_internal_messages(
     source: &Address,
     body: &[u8],
     session: &mut Session,
+    state: &mut State,
 ) -> anyhow::Result<()> {
     let Session {
         tg_api,
         tg_worker,
-        context_manager,
         openai_api,
         ..
     } = session;
+
+    let State {
+        context_manager,
+        config: _, // TODO: Bitful: you can use it here :D
+    } = state;
 
     match serde_json::from_slice(body)? {
         TgResponse::Update(tg_update) => {
@@ -275,7 +284,7 @@ fn _handle_internal_messages(
                                     + 3600;
 
                                 let (uid, sig) = contracts::_create_offer(
-                                    &session._wallet,
+                                    &session.wallet,
                                     &EthAddress::from_str(&finalized_offer.nft_key.address)?,
                                     finalized_offer.nft_key.id,
                                     &EthAddress::from_str(&finalized_offer.buyer_address)?,
@@ -358,39 +367,37 @@ fn modify_state(http_request_outcome: HttpRequestOutcome) {
     }
 }
 
-fn modify_session(
+fn generate_session(our: &Address, state: &State) -> anyhow::Result<Session> {
+    let Ok(openai_api) = spawn_openai_pkg(our.clone(), &state.config.openai_key) else {
+        return Err(anyhow::anyhow!("openAI couldn't boot."));
+    };
+    let Ok((tg_api, tg_worker)) =
+        init_tg_bot(our.clone(), &state.config.telegram_bot_api_key, None)
+    else {
+        return Err(anyhow::anyhow!("tg bot couldn't boot."));
+    };
+
+    let Ok(wallet) = state.config.wallet_pk.parse::<LocalWallet>() else {
+        return Err(anyhow::anyhow!("couldn't parse private key."));
+    };
+    Ok(Session {
+        tg_api,
+        tg_worker,
+        wallet,
+        openai_api,
+    })
+}
+
+fn update_state_and_session(
     our: &Address,
     session: &mut Option<Session>,
     http_request_outcome: HttpRequestOutcome,
 ) -> anyhow::Result<()> {
     modify_state(http_request_outcome.clone());
-    match http_request_outcome {
-        HttpRequestOutcome::Config(_) => {
-            if let Some(state) = State::fetch() {
-                let Ok(openai_api) = spawn_openai_pkg(our.clone(), &state.config.openai_key) else {
-                    return Err(anyhow::anyhow!("openAI couldn't boot."));
-                };
-                let Ok((tg_api, tg_worker)) =
-                    init_tg_bot(our.clone(), &state.config.telegram_bot_api_key, None)
-                else {
-                    return Err(anyhow::anyhow!("tg bot couldn't boot."));
-                };
-
-                let Ok(wallet) = state.config.wallet_pk.parse::<LocalWallet>() else {
-                    return Err(anyhow::anyhow!("couldn't parse private key."));
-                };
-                *session = Some(Session {
-                    tg_api,
-                    tg_worker,
-                    _wallet: wallet,
-                    context_manager: state.context_manager,
-                    openai_api,
-                    _offerings: HashMap::new(),
-                    _sold: HashMap::new(),
-                });
-            }
+    if let Some(state) = State::fetch() {
+        if session.is_none() || matches!(http_request_outcome, HttpRequestOutcome::Config(_)) {
+            *session = generate_session(our, &state).ok();
         }
-        _ => {}
     }
 
     Ok(())
@@ -479,7 +486,7 @@ fn init(our: Address) {
 
         if message.source().process == "http_server:distro:sys" {
             let http_request_outcome = handle_http_messages(&message);
-            let _ = modify_session(&our, &mut session, http_request_outcome);
+            let _ = update_state_and_session(&our, &mut session, http_request_outcome);
         } else {
             match handle_internal_messages(&message, &mut session) {
                 Ok(()) => {}
