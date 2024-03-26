@@ -2,15 +2,17 @@ use crate::llm_api::OpenaiApi;
 use crate::llm_types::openai::ChatParams;
 use crate::llm_types::openai::Message;
 use crate::AddNFTArgs;
-use kinode_process_lib::println;
+// use kinode_process_lib::println;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::collections::VecDeque;
+use alloy_primitives::Address as EthAddress;
+use std::str::FromStr;
 
 /// The maximum number of messages to keep in the chat history buffer
 const BUFFER_CAPACITY: usize = 4;
 
-const ADDRESS_PASSKEY: &str = "Thank you, setting up contract for ";
+const ADDRESS_PASSKEY: &str = "Thank you, reserving offer for ";
 const SOLD_PASSKEY: &str = "SOLD <name_of_item> for <amount> ETH!";
 
 type ChatId = i64;
@@ -375,25 +377,25 @@ impl Context {
         None
     }
 
-    // TODO: Zen: We're taking in the user input, yet handling the llm output
-    // TODO: Zen: Why doesn't the llm even output things that are correct? 
     fn handle_address_linking(&self, input: &str) -> Option<LinkAddressCommand> {
-        input
-            .strip_prefix(ADDRESS_PASSKEY)
-            .and_then(|potential_address| {
-                let address = potential_address.get(..42).unwrap_or_default();
-                if address.starts_with("0x") {
-                    self.nfts.iter().find_map(|(current_key, data)| {
-                        data.state.tentative_offer.then(|| LinkAddressCommand {
+        let stripped_input = input.strip_prefix(ADDRESS_PASSKEY).unwrap_or(input);
+        match EthAddress::from_str(stripped_input) {
+            Ok(eth_address) => {
+                for (current_key, data) in self.nfts.iter() {
+                    if data.state.tentative_offer {
+                        return Some(LinkAddressCommand {
                             nft_key: current_key.clone(),
-                            buyer_address: address.to_string(),
-                        })
-                    })
-                } else {
-                    println!("Invalid Ethereum address format.");
-                    None
+                            buyer_address: eth_address.to_string(),
+                        });
+                    }
                 }
-            })
+                None
+            }
+            Err(_) => {
+                println!("Failed to parse EthAddress from input");
+                None
+            }
+        }
     }
 }
 
