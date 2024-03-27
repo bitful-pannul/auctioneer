@@ -30,7 +30,7 @@ const InitialConfig: React.FC<{ onSubmit: (configData: ConfigData) => Promise<vo
   const [openaiKey, setOpenaiKey] = useState("");
   const [telegramKey, setTelegramKey] = useState("");
   const [walletPk, setWalletPk] = useState("");
-  const [hostedUrl, setHostedUrl] = useState("localhost:8080"); // add default hosted website.
+  const [hostedUrl, setHostedUrl] = useState("http://localhost:8080/auctioneer:auctioneer:template.os"); // add default hosted website.
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

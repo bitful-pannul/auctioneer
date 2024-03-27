@@ -2,15 +2,12 @@ use crate::llm_api::OpenaiApi;
 use crate::llm_types::openai::ChatParams;
 use crate::llm_types::openai::Message;
 use crate::AddNFTArgs;
-use alloy_primitives::Address as EthAddress;
 use alloy_primitives::{
     utils::{format_ether, parse_units},
     U256,
 };
-use kinode_process_lib::println;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
-use std::str::FromStr;
 
 /// The maximum number of messages to keep in the chat history buffer
 const BUFFER_CAPACITY: usize = 4;
@@ -318,7 +315,6 @@ impl Context {
                         Some(custom_prompt) => format!(", and custom rules: {}", custom_prompt),
                         None => "".to_string(),
                     };
-                    println!("some min price: {:?}", format_ether(data.listing.min_price));
                     format!(
                         "\n- {} with min bid of {} ETH{}{}.\n",
                         data.listing.name,

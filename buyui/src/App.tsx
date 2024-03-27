@@ -1,7 +1,6 @@
-import React, { useEffect, useState } from "react";
-import { parseEther, parse } from "viem/utils";
+import { useEffect, useState } from "react";
 import { useAccount, useReadContract, useWriteContract, useSwitchChain } from "wagmi";
-import { erc721Abi, formatEther, parseUnits } from "viem";
+import { erc721Abi, parseUnits } from "viem";
 
 import NFTEscrow from "./abis/NFTEscrow.json";
 import { Header } from "./components/layout/Header";

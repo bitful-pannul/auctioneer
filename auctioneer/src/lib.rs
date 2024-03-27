@@ -1,4 +1,4 @@
-use alloy_primitives::{utils::parse_ether, utils::parse_units, Address as EthAddress};
+use alloy_primitives::Address as EthAddress;
 use alloy_signer::LocalWallet;
 use context::NFTKey;
 use frankenstein::{
@@ -283,13 +283,6 @@ fn _handle_internal_messages(
                                     .as_secs()
                                     + 3600;
 
-                                println!(
-                                    "info passed, address: {:?}, buyer: {:?}, price: {:?}",
-                                    &finalized_offer.nft_key.address.to_string(),
-                                    &finalized_offer.buyer_address.to_string(),
-                                    &finalized_offer.price.to_string()
-                                );
-
                                 let (uid, sig) = contracts::_create_offer(
                                     &session.wallet,
                                     &EthAddress::from_str(&finalized_offer.nft_key.address)?,
@@ -300,7 +293,8 @@ fn _handle_internal_messages(
                                 )?;
 
                                 let link = format!(
-                                    "https://localhost:8080/buy?nft={}&id={}&price={}&valid={}&uid={}&sig={}&chain={}",
+                                    "{}/buy?nft={}&id={}&price={}&valid={}&uid={}&sig={}&chain={}",
+                                    state.config.hosted_url,
                                     finalized_offer.nft_key.address,
                                     finalized_offer.nft_key.id,
                                     finalized_offer.price,
@@ -309,7 +303,7 @@ fn _handle_internal_messages(
                                     format!("0x{}", hex::encode(sig.as_bytes())),
                                     finalized_offer.nft_key.chain
                                 );
-                                println!("Purchase link: {}", link);
+
                                 format!("buy it at the link: {}", &link)
                             } else {
                                 text
