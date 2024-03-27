@@ -34,6 +34,7 @@ const App = () => {
   const [chainId, setChainId] = useState(searchParams.get("chain") || null);
   const [checkboxState, setCheckboxState] = useState(false);
 
+  const [txHash, setTxHash] = useState("");
   const [tokenURI, setTokenURI] = useState("");
   const [metadata, setMetadata] = useState(null);
   const [metadataVisible, setMetadataVisible] = useState(false);
@@ -116,6 +117,7 @@ const App = () => {
         value: parseUnits(price, -18),
       });
       console.log('result is: ', result);
+      setTxHash(result);
       console.log('fail might be: ', failureReason);
     } catch (error) {
       console.log('fail reason is: ', failureReason);
@@ -193,7 +195,7 @@ const App = () => {
             </div>
             {!checkboxState && (
               <div className="px-4 py-2 my-2 text-white bg-red-500 rounded">
-                This NFT might not be approved for the escrow. Please approve it before proceeding.
+                This NFT might not be approved for the escrow. Please doublecheck if the item is still available.
               </div>
             )}
             <button onClick={handleBuyNFT} className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-700 disabled:bg-blue-300 transition duration-300 ease-in-out">Buy NFT</button>
@@ -203,12 +205,12 @@ const App = () => {
               {errorMessage}
             </div>
           )}
-          {/* {txData && (
+          {txHash && (
             <div>
               <h2>Transaction Data:</h2>
-              <pre>{JSON.stringify(txData, null, 2)}</pre>
+              <pre>{JSON.stringify(txHash, null, 2)}</pre>
             </div>
-          )} */}
+          )}
         </div>
       </div>
     </>

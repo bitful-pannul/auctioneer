@@ -1,4 +1,4 @@
-use alloy_primitives::Address as EthAddress;
+use alloy_primitives::{utils::format_ether, Address as EthAddress};
 use alloy_signer::LocalWallet;
 use context::NFTKey;
 use frankenstein::{
@@ -146,7 +146,7 @@ fn list_nfts() -> HttpRequestOutcome {
                 "id": key.id,
                 "chain": key.chain,
                 "name": value.name,
-                "min_price": value.min_price,
+                "min_price": format_ether(value.min_price),
                 "address": value.address,
                 "description": value.description,
                 "custom_prompt": value.custom_prompt,

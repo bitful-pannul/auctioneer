@@ -193,7 +193,7 @@ impl ContextManager {
         let context = self.chat_context(chat_id);
         if context.tentative_offer_exists() && context.buyer_address.is_none() {
             return Some(
-                "\nPlease send me your public Ethereum address so I can send you the NFT."
+                "\nPlease send me your public Ethereum address so I can reserve the NFT for you."
                     .to_string(),
             );
         }
