@@ -381,7 +381,9 @@ fn generate_session(our: &Address, state: &State) -> anyhow::Result<Session> {
         .address(escrow_address)
         .from_block(0)
         .to_block(eth::BlockNumberOrTag::Latest)
-        .events(vec!["NFTPurchased(address,uint256,address,uint256)"])
+        .events(vec![
+            "NFTPurchased(address,address,uint256,address,uint256)",
+        ])
         .topic1(seller_topic);
 
     let sep = eth::Provider::new(11155111, 15);
