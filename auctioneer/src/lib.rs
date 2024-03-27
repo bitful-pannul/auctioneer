@@ -477,7 +477,6 @@ fn handle_eth_message(message: &Message) -> HttpRequestOutcome {
             return HttpRequestOutcome::None;
         }
         Message::Request {
-            ref source,
             ref body,
             ..
         } => {
