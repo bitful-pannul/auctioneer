@@ -247,7 +247,7 @@ fn handle_internal_request(
     }
 
     let Some(update) = updates.last() else {
-        return Err(anyhow::anyhow!("no update found"));
+        return Ok(());
     };
 
     let msg = match &update.content {
