@@ -136,13 +136,15 @@ impl ContextManager {
             address: nft_address.clone(),
             chain: chain_id,
         };
+        let Ok(min_price) = parse_units(&min_price, "ether") else {
+            return;
+        };
         let listing = NFTListing {
             name: nft_name,
             address: nft_address,
             description: nft_description,
             custom_prompt: sell_prompt,
-            // todo remove unwrap
-            min_price: parse_units(&min_price, "ether").unwrap().into(),
+            min_price: min_price.into(),
         };
 
         self.nft_listings.insert(key.clone(), listing.clone());
