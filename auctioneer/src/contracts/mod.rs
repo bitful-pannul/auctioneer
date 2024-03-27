@@ -1,9 +1,18 @@
 use alloy_primitives::{keccak256, Address, U256};
 use alloy_signer::{LocalWallet, Signature, SignerSync};
-use alloy_sol_types::SolValue;
+use alloy_sol_types::{sol, SolValue};
 // use kinode_process_lib::println;
 
-// SEPOLIA + OP mainnet: 0xeB461C6ECB19dce8f3af49dB0f2bD7c9fa3edC8F
+// SEPOLIA + OP mainnet + BASE: 0x4A3A2c0A385F017501544DcD9C6Eb3f6C63fc38b
+sol! {
+    event NFTPurchased(
+        address indexed seller,
+        address nftAddress,
+        uint256 tokenId,
+        address buyer,
+        uint256 price
+    );
+}
 
 /// Create a Sell offer, returning uid and signature buyer can use to transfer NFT out of escrow!
 pub fn _create_offer(
