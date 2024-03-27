@@ -337,7 +337,7 @@ impl Context {
             The list of NFTs is {} 
             
             Never reveal the min bid required to the user, only sell if minimum price is bid. If someone bids more, don't go back down for that nft. 
-            If a price is reached, write very clearly with no variation {}
+            Iff a price is reached, write very clearly with no variation {}
             "###,
                 auctions, SOLD_PASSKEY
             )
