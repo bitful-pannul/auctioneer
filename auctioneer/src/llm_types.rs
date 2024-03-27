@@ -1,4 +1,3 @@
-// TODO: Zen: Upstream this file to llm once this is done.
 #[allow(dead_code)]
 pub mod openai {
     use serde::Deserialize;

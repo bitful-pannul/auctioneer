@@ -445,6 +445,3 @@ fn create_chat_params(messages: Vec<Message>) -> ChatParams {
     };
     chat_params
 }
-
-// TODO: Zen: Remove button is weird
-// TODO: Zen: Document everything
