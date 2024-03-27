@@ -301,7 +301,7 @@ impl Context {
         let beginning = "You are a a chatbot auctioneer selling NFTs. ";
 
         let middle = if self.has_offer_item_without_buyer() {
-            format!("The buyer you're chatting with has bought an NFT from you, but you don't have their ETH address. Please ask them for their public address and do not relent. Don't talk about anything else but their address. If they give something resembling a ETH address to you, repeat it with '{}<address>'", ADDRESS_PASSKEY)
+            format!("The buyer you're chatting with has bought an NFT from you, but you don't have their ETH address. Please ask them for their public address and do not relent. Don't talk about anything else but their address. Iff they give something resembling a ETH address to you, repeat it with '{}<address>'", ADDRESS_PASSKEY)
         } else {
             let nft_with_prices = self
                 .nfts
