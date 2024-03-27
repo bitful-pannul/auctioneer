@@ -209,12 +209,12 @@ fn handle_internal_messages(
             ref body,
             ..
         } => {
-            return _handle_internal_messages(source, body, session, &mut state);
+            return handle_internal_request(source, body, session, &mut state);
         }
     }
 }
 
-fn _handle_internal_messages(
+fn handle_internal_request(
     source: &Address,
     body: &[u8],
     session: &mut Session,
@@ -232,95 +232,81 @@ fn _handle_internal_messages(
         config: _,
     } = state;
 
-    match serde_json::from_slice(body)? {
-        TgResponse::Update(tg_update) => {
-            let updates = tg_update.updates;
-            // assert update is from our worker
-            if source != tg_worker {
-                return Err(anyhow::anyhow!(
-                    "unexpected source: {:?}, expected: {:?}",
-                    source,
-                    tg_worker
-                ));
-            }
+    let Ok(TgResponse::Update(tg_update)) = serde_json::from_slice(body) else {
+        return Err(anyhow::anyhow!("unexpected response: {:?}", body));
+    };
 
-            if let Some(update) = updates.last() {
-                match &update.content {
-                    TgMessage(msg) | TgChannelPost(msg) => {
-                        let text = msg.text.clone().unwrap_or_default();
-
-                        // fill in default send_message params, switch content later!
-                        let mut params = SendMessageParams {
-                            chat_id: ChatId::Integer(msg.chat.id),
-                            disable_notification: None,
-                            entities: None,
-                            link_preview_options: None,
-                            message_thread_id: None,
-                            parse_mode: None,
-                            text: "temp".to_string(),
-                            protect_content: None,
-                            reply_markup: None,
-                            reply_parameters: None,
-                            // todo, maybe change api so can ..Default::default()?
-                        };
-
-                        params.text = if text == "/reset" {
-                            context_manager.clear(msg.chat.id);
-                            "Reset succesful!".to_string()
-                        } else {
-                            let mut text = context_manager.chat(msg.chat.id, &text, &openai_api)?;
-                            let finalized_offer_opt = context_manager.act(msg.chat.id, &text);
-                            if let Some(additional_text) =
-                                &context_manager.additional_text(msg.chat.id)
-                            {
-                                text += additional_text;
-                            }
-
-                            if let Some(finalized_offer) = finalized_offer_opt {
-                                let valid_until = std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .expect("Time went backwards")
-                                    .as_secs()
-                                    + 3600;
-
-                                let (uid, sig) = contracts::_create_offer(
-                                    &session.wallet,
-                                    &EthAddress::from_str(&finalized_offer.nft_key.address)?,
-                                    finalized_offer.nft_key.id,
-                                    &EthAddress::from_str(&finalized_offer.buyer_address)?,
-                                    finalized_offer.price,
-                                    valid_until,
-                                )?;
-
-                                let link = format!(
-                                    "{}/buy?nft={}&id={}&price={}&valid={}&uid={}&sig={}&chain={}",
-                                    state.config.hosted_url,
-                                    finalized_offer.nft_key.address,
-                                    finalized_offer.nft_key.id,
-                                    finalized_offer.price,
-                                    valid_until,
-                                    uid,
-                                    format!("0x{}", hex::encode(sig.as_bytes())),
-                                    finalized_offer.nft_key.chain
-                                );
-
-                                format!("buy it at the link: {}", &link)
-                            } else {
-                                text
-                            }
-                        };
-                        tg_api.send_message(&params)?;
-                    }
-                    _ => {
-                        println!("got unhandled tg update: {:?}", update);
-                    }
-                }
-            }
-        }
-        TgResponse::Error(e) => {
-            println!("error from tg worker: {:?}", e);
-        }
+    let updates = tg_update.updates;
+    // assert update is from our worker
+    if source != tg_worker {
+        return Err(anyhow::anyhow!(
+            "unexpected source: {:?}, expected: {:?}",
+            source,
+            tg_worker
+        ));
     }
+
+    let Some(update) = updates.last() else {
+        return Err(anyhow::anyhow!("no update found"));
+    };
+
+    let msg = match &update.content {
+        TgMessage(msg) | TgChannelPost(msg) => msg,
+        _ => return Err(anyhow::anyhow!("unexpected content: {:?}", update.content)),
+    };
+
+    let text = msg.text.clone().unwrap_or_default();
+
+    let mut params = SendMessageParams::builder()
+        .chat_id(ChatId::Integer(msg.chat.id))
+        .text("temp".to_string())
+        .build();
+
+    params.text = if text == "/reset" {
+        context_manager.clear(msg.chat.id);
+        "Reset succesful!".to_string()
+    } else {
+        let mut text = context_manager.chat(msg.chat.id, &text, &openai_api)?;
+        let finalized_offer_opt = context_manager.act(msg.chat.id, &text);
+        if let Some(additional_text) = &context_manager.additional_text(msg.chat.id) {
+            text += additional_text;
+        }
+
+        if let Some(finalized_offer) = finalized_offer_opt {
+            let valid_until = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("Time went backwards")
+                .as_secs()
+                + 3600;
+
+            let (uid, sig) = contracts::_create_offer(
+                &session.wallet,
+                &EthAddress::from_str(&finalized_offer.nft_key.address)?,
+                finalized_offer.nft_key.id,
+                &EthAddress::from_str(&finalized_offer.buyer_address)?,
+                finalized_offer.price,
+                valid_until,
+            )?;
+
+            let link = format!(
+                "{}/buy?nft={}&id={}&price={}&valid={}&uid={}&sig={}&chain={}",
+                state.config.hosted_url,
+                finalized_offer.nft_key.address,
+                finalized_offer.nft_key.id,
+                finalized_offer.price,
+                valid_until,
+                uid,
+                format!("0x{}", hex::encode(sig.as_bytes())),
+                finalized_offer.nft_key.chain
+            );
+
+            format!("buy it at the link: {}", &link)
+        } else {
+            text
+        }
+    };
+    tg_api.send_message(&params)?;
+
     state.save();
     Ok(())
 }
