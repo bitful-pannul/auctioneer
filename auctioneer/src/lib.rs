@@ -1,13 +1,12 @@
-use alloy_primitives::{utils::format_ether, Address as EthAddress};
+use alloy_primitives::{utils::format_ether, Address as EthAddress, FixedBytes};
 use alloy_signer::LocalWallet;
+use alloy_sol_types::SolEvent;
 use frankenstein::{
     ChatId, SendMessageParams, TelegramApi, UpdateContent::ChannelPost as TgChannelPost,
     UpdateContent::Message as TgMessage,
 };
 use kinode_process_lib::{
-    await_message, call_init,
-    eth::{self, Filter},
-    get_blob, get_state, http, println, set_state, Address, Message,
+    await_message, call_init, eth, get_blob, get_state, http, println, set_state, Address, Message,
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, str::FromStr};
@@ -23,7 +22,7 @@ use llm_api::{spawn_openai_pkg, OpenaiApi};
 
 mod contracts;
 
-use crate::context::ContextManager;
+use crate::context::{ContextManager, NFTKey};
 
 const PROCESS_ID: &str = "auctioneer:auctioneer:template.os";
 
@@ -369,6 +368,32 @@ fn generate_session(our: &Address, state: &State) -> anyhow::Result<Session> {
     let Ok(wallet) = state.config.wallet_pk.parse::<LocalWallet>() else {
         return Err(anyhow::anyhow!("couldn't parse private key."));
     };
+
+    // subscribe to updates...
+    let escrow_address =
+        EthAddress::from_str("0x4A3A2c0A385F017501544DcD9C6Eb3f6C63fc38b").unwrap();
+
+    let mut seller_topic_bytes = [0u8; 32];
+    seller_topic_bytes[12..].copy_from_slice(&wallet.address().to_vec());
+    let seller_topic: FixedBytes<32> = FixedBytes::from_slice(&seller_topic_bytes);
+
+    let filter = eth::Filter::new()
+        .address(escrow_address)
+        .from_block(0)
+        .to_block(eth::BlockNumberOrTag::Latest)
+        .events(vec!["NFTPurchased(address,uint256,address,uint256)"])
+        .topic1(seller_topic);
+
+    let sep = eth::Provider::new(11155111, 15);
+    let op = eth::Provider::new(10, 15);
+    let base = eth::Provider::new(8453, 15);
+    let arb = eth::Provider::new(42161, 15);
+
+    let _ = sep.subscribe(1, filter.clone());
+    let _ = op.subscribe(2, filter.clone());
+    let _ = base.subscribe(3, filter.clone());
+    let _ = arb.subscribe(4, filter);
+
     Ok(Session {
         tg_api,
         tg_worker,
@@ -444,10 +469,10 @@ fn handle_http_messages(message: &Message) -> HttpRequestOutcome {
     }
 }
 
-fn handle_eth_message(message: &Message) -> anyhow::Result<HttpRequestOutcome> {
+fn handle_eth_message(message: &Message) -> HttpRequestOutcome {
     match message {
         Message::Response { .. } => {
-            return Err(anyhow::anyhow!("unexpected Response: {:?}", message));
+            return HttpRequestOutcome::None;
         }
         Message::Request {
             ref source,
@@ -455,19 +480,24 @@ fn handle_eth_message(message: &Message) -> anyhow::Result<HttpRequestOutcome> {
             ..
         } => {
             let Ok(eth_result) = serde_json::from_slice::<eth::EthSubResult>(body) else {
-                return Err(anyhow::anyhow!("got invalid message"));
+                return HttpRequestOutcome::None;
             };
 
             match eth_result {
                 Ok(eth::EthSub { result, id }) => {
                     if let eth::SubscriptionResult::Log(log) = result {
-                        let log: LogData = log;
-                        // let update = contracts::NFTPurchased::decode_log(&*log)?;
+                        // pre_filtered by seller. nice.s
+                        let Ok((nft, nft_id, buyer, price)) =
+                            contracts::NFTPurchased::abi_decode_data(&log.data, true)
+                        else {
+                            return HttpRequestOutcome::None;
+                        };
 
                         let chain = match id {
                             1 => 11155111,
                             2 => 10,
                             3 => 8453,
+                            4 => 42161,
                             _ => 0,
                         };
 
@@ -475,18 +505,18 @@ fn handle_eth_message(message: &Message) -> anyhow::Result<HttpRequestOutcome> {
                             "sell event with all of these: {:?}, {:?}, {:?}, {:?}",
                             nft, nft_id, buyer, price
                         );
-                        return Ok(HttpRequestOutcome::RemoveNFT(NFTKey {
+                        return HttpRequestOutcome::RemoveNFT(NFTKey {
                             address: nft.to_string(),
                             id: nft_id.to::<u64>(),
                             chain,
-                        }));
+                        });
                     }
                 }
-                _ => return Ok(HttpRequestOutcome::None),
+                _ => return HttpRequestOutcome::None,
             }
         }
     }
-    Ok(HttpRequestOutcome::None)
+    HttpRequestOutcome::None
 }
 
 /// on startup, the auctioneer will need a tg token, open_ai token, and a private key holding the NFTs.
@@ -507,24 +537,6 @@ fn init(our: Address) {
         ],
     );
 
-    // index multiple chains? slightly painful....
-    let escrow_address =
-        EthAddress::from_str("0x7b1431A0f20A92dD7E42A28f7Ba9FfF192F36DF3").unwrap();
-
-    let sep = eth::Provider::new(11155111, 5);
-    let op = eth::Provider::new(10, 5);
-    let base = eth::Provider::new(8453, 5);
-
-    let filter = eth::Filter::new()
-        .address(escrow_address)
-        .from_block(0)
-        .to_block(eth::BlockNumberOrTag::Latest)
-        .events(vec!["NFTPurchased(address,uint256,address,uint256)"]);
-
-    let _ = sep.subscribe(1, filter.clone());
-    let _ = op.subscribe(2, filter.clone());
-    let _ = base.subscribe(3, filter);
-
     let _ = http::serve_ui(&our, "ui/buy/", false, false, vec!["/buy"]);
 
     let mut session: Option<Session> = if let Some(state) = State::fetch() {
@@ -543,6 +555,9 @@ fn init(our: Address) {
 
         if message.source().process == "http_server:distro:sys" {
             let http_request_outcome = handle_http_messages(&message);
+            let _ = update_state_and_session(&our, &mut session, http_request_outcome);
+        } else if message.source().process == "eth:distro:sys" {
+            let http_request_outcome = handle_eth_message(&message);
             let _ = update_state_and_session(&our, &mut session, http_request_outcome);
         } else {
             match handle_internal_messages(&message, &mut session) {
