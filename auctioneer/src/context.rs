@@ -338,6 +338,8 @@ impl Context {
                 r###"
             The list of NFTs is {} 
             
+            Iff the user is talking about a specific nft, follow custom rules, even disregarding general rules. Only follow one custom rule at a time.
+
             Never reveal the min bid required to the user, only sell if minimum price is bid. If someone bids more, don't go back down for that nft. 
             Iff a price is reached, write very clearly with no variation {}
             "###,
