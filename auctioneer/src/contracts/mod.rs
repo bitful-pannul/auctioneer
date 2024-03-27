@@ -19,7 +19,7 @@ pub fn _create_offer(
     nft_address: &Address,
     nft_id: u64,
     buyer: &Address,
-    price: u64,
+    price: U256,
     valid_until: u64,
 ) -> anyhow::Result<(u64, Signature)> {
     let uid = rand::random::<u64>();
@@ -27,7 +27,7 @@ pub fn _create_offer(
         (
             nft_address,
             U256::from(nft_id),
-            U256::from(price),
+            price,
             U256::from(uid),
             U256::from(valid_until),
             buyer,

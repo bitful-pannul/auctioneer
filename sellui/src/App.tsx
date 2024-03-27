@@ -7,7 +7,7 @@ import { WalletModal } from "./components/WalletModal";
 import Button from "antd/es/button";
 import { shorten } from "@did-network/dapp-sdk";
 
-const ESCROW_ADDRESS = "0x7b1431A0f20A92dD7E42A28f7Ba9FfF192F36DF3";
+const ESCROW_ADDRESS = "0xeB461C6ECB19dce8f3af49dB0f2bD7c9fa3edC8F";
 
 interface ConfigData {
   openai_key: string,
@@ -21,7 +21,7 @@ interface NFT {
   chain: number;
   name: string;
   address: string;
-  min_price: number;
+  min_price: string;
   description?: string;
   custom_prompt?: string;
 }
@@ -30,7 +30,7 @@ const InitialConfig: React.FC<{ onSubmit: (configData: ConfigData) => Promise<vo
   const [openaiKey, setOpenaiKey] = useState("");
   const [telegramKey, setTelegramKey] = useState("");
   const [walletPk, setWalletPk] = useState("");
-  const [hostedUrl, setHostedUrl] = useState("localhost:8080"); // add default hosted website.
+  const [hostedUrl, setHostedUrl] = useState("http://localhost:8080/auctioneer:auctioneer:template.os"); // add default hosted website.
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -223,7 +223,7 @@ const NFTManager: React.FC = () => {
         chain_id: chainId,
         nft_description: nftDescription,
         sell_prompt: sellPrompt,
-        min_price: parseFloat(minPrice),
+        min_price: minPrice,
       }),
     });
     await listNFTs();
@@ -390,7 +390,7 @@ const NFTManager: React.FC = () => {
               <div>
                 <p className="font-bold">Name: {nft.name}</p>
                 <p>Address: {nft.address}</p>
-                <p>Min Price: {nft.min_price.toFixed(2)}</p>
+                <p>Min Price: {nft.min_price}</p>
                 <p>Description: {nft.description || "N/A"}</p>
                 <p>Custom Prompt: {nft.custom_prompt || "N/A"}</p>
               </div>

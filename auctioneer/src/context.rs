@@ -2,15 +2,17 @@ use crate::llm_api::OpenaiApi;
 use crate::llm_types::openai::ChatParams;
 use crate::llm_types::openai::Message;
 use crate::AddNFTArgs;
-use kinode_process_lib::println;
+use alloy_primitives::{
+    utils::{format_ether, parse_units},
+    U256,
+};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 /// The maximum number of messages to keep in the chat history buffer
 const BUFFER_CAPACITY: usize = 4;
 
-const ADDRESS_PASSKEY: &str = "Thank you, setting up contract for ";
+const ADDRESS_PASSKEY: &str = "Thank you, reserving offer for ";
 const SOLD_PASSKEY: &str = "SOLD <name_of_item> for <amount> ETH!";
 
 type ChatId = i64;
@@ -27,9 +29,6 @@ struct Context {
     pub nfts: HashMap<NFTKey, NFTData>,
     pub buyer_address: Option<String>,
     chat_history: Buffer<Message>,
-    /// List of nfts that have been offered in other chats. 
-    /// Will be checked, and if any are sold, the user will be notified, then they will be cleared.
-    pub nfts_offered_in_other_chats: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
@@ -48,7 +47,7 @@ struct NFTData {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct NFTListing {
     pub name: String,
-    pub min_price: f32,
+    pub min_price: U256,
     pub address: String,
     pub description: Option<String>,
     pub custom_prompt: Option<String>,
@@ -56,7 +55,7 @@ pub struct NFTListing {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 struct NFTState {
-    pub highest_bid: f32,
+    pub highest_bid: U256,
     pub tentative_offer: bool,
 }
 
@@ -80,13 +79,13 @@ impl Default for AuctioneerCommand {
 pub struct FinalizedOfferCommand {
     pub nft_key: NFTKey,
     pub buyer_address: String,
-    pub price: f32,
+    pub price: U256,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TentativeOfferCommand {
     pub nft_key: NFTKey,
-    pub price: f32,
+    pub price: U256,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -96,7 +95,7 @@ pub struct LinkAddressCommand {
 }
 
 impl ContextManager {
-    pub fn new(nft_consts: &[(i64, &str, f32)]) -> Self {
+    pub fn new(nft_consts: &[(i64, &str, U256)]) -> Self {
         let mut nft_listings = HashMap::new();
 
         for nft in nft_consts {
@@ -137,12 +136,15 @@ impl ContextManager {
             address: nft_address.clone(),
             chain: chain_id,
         };
+        let Ok(min_price) = parse_units(&min_price, "ether") else {
+            return;
+        };
         let listing = NFTListing {
             name: nft_name,
             address: nft_address,
             description: nft_description,
             custom_prompt: sell_prompt,
-            min_price,
+            min_price: min_price.into(),
         };
 
         self.nft_listings.insert(key.clone(), listing.clone());
@@ -152,7 +154,6 @@ impl ContextManager {
                 state: NFTState::default(),
             });
         }
-        println!("The list of nft listings is now: {:?}", self.nft_listings);
     }
 
     pub fn chat(
@@ -166,16 +167,12 @@ impl ContextManager {
         Ok(message.content)
     }
 
-    pub fn act(&mut self, chat_id: ChatId, text: &str) -> Option<FinalizedOfferCommand> {
+    pub fn act(&mut self, chat_id: ChatId, llm_response: &str) -> Option<FinalizedOfferCommand> {
         let offered_nft_key = {
             let context = self.chat_context(chat_id);
-            context.process_input(text)
+            context.process_llm_response(llm_response)
         };
-    
-        if let Some(ref removed_nft_key) = offered_nft_key {
-            self.remove_nft_for_chat(removed_nft_key, chat_id);
-        }
-    
+
         // Re-acquire the context to access the buyer address and potentially finalize the offer.
         let context = self.chat_context(chat_id);
         match (&offered_nft_key, &context.buyer_address) {
@@ -185,38 +182,22 @@ impl ContextManager {
                 price: context
                     .nfts
                     .get(offered_nft_key)
-                    .map(|data| data.listing.min_price)
+                    .map(|data| data.state.highest_bid)
                     .unwrap_or_default(),
             }),
             _ => None,
         }
     }
 
-    pub fn additional_text(&mut self, chat_id: ChatId,) -> Option<String> {
-        // Check whether other chats have initiated an nft, and notify the user
-        for (_, context) in &mut self.contexts {
-            if context.nfts_offered_in_other_chats.len() > 0 {
-                let offered_nfts_string = context.nfts_offered_in_other_chats.join(", ");
-                context.nfts_offered_in_other_chats.clear();
-                return Some(format!(
-                    "\n\nAlso note: The NFTs '{}' have been sold in another chat!",
-                    offered_nfts_string
-                ));
-            }
-        }
-
+    pub fn additional_text(&mut self, chat_id: ChatId) -> Option<String> {
         // Check whether the user has offered an nft, and if so, check if they have a buyer address.
         // If not, ask them for their address.
         let context = self.chat_context(chat_id);
-        for (_, data) in &context.nfts {
-            if data.state.tentative_offer {
-                if context.buyer_address.is_none() {
-                    return Some(
-                        "\nPlease send me your public Ethereum address so I can send you the NFT."
-                            .to_string(),
-                    );
-                }
-            }
+        if context.tentative_offer_exists() && context.buyer_address.is_none() {
+            return Some(
+                "\nPlease send me your public Ethereum address so I can reserve the NFT for you."
+                    .to_string(),
+            );
         }
         None
     }
@@ -234,22 +215,6 @@ impl ContextManager {
         }
     }
 
-    fn remove_nft_for_chat(&mut self, nft_key: &NFTKey, chat_id: ChatId) {
-        let name = self
-            .nft_listings
-            .get(nft_key)
-            .map(|listing| listing.name.clone())
-            .unwrap_or_default();
-        self.nft_listings.remove(nft_key);
-
-        for (context_id, context) in self.contexts.iter_mut() {
-            context.nfts.remove(nft_key);
-            if *context_id != chat_id {
-                context.nfts_offered_in_other_chats.push(name.clone());
-            }
-        }
-    }
-
     pub fn clear(&mut self, chat_id: ChatId) {
         self.contexts.remove(&chat_id);
     }
@@ -258,7 +223,7 @@ impl ContextManager {
         let mut nft_data = HashMap::new();
         for (nft_key, listing) in nft_listings {
             let nft_state = NFTState {
-                highest_bid: 0.0,
+                highest_bid: U256::ZERO,
                 tentative_offer: false,
             };
             let data = NFTData {
@@ -272,7 +237,6 @@ impl ContextManager {
             nfts: nft_data,
             buyer_address: None,
             chat_history: Buffer::new(BUFFER_CAPACITY),
-            nfts_offered_in_other_chats: vec![],
         }
     }
 }
@@ -290,23 +254,40 @@ impl Context {
         Ok(answer)
     }
 
-    fn process_input(&mut self, input: &str) -> Option<NFTKey> {
-        if let Some(tentative_offer) = self.handle_offer(input) {
+    fn process_llm_response(&mut self, llm_response: &str) -> Option<NFTKey> {
+        if let Some(tentative_offer) = self.handle_offer(llm_response) {
             self.nfts.get_mut(&tentative_offer.nft_key).map(|data| {
                 data.state.tentative_offer = true;
+                if data.state.highest_bid < tentative_offer.price {
+                    data.state.highest_bid = tentative_offer.price;
+                }
             });
             if self.buyer_address.is_some() {
                 return Some(tentative_offer.nft_key);
             }
-        } else if let Some(link_address_cmd) = self.handle_address_linking(input) {
+        } else if let Some(link_address_cmd) = self.handle_address_linking(llm_response) {
             self.buyer_address = Some(link_address_cmd.buyer_address);
             return Some(link_address_cmd.nft_key);
         }
         None
     }
 
+    fn tentative_offer_exists(&self) -> bool {
+        self.first_tentative_offer().is_some()
+    }
+
+    fn first_tentative_offer(&self) -> Option<NFTKey> {
+        self.nfts.iter().find_map(|(key, data)| {
+            if data.state.tentative_offer {
+                Some(key.clone())
+            } else {
+                None
+            }
+        })
+    }
+
     fn has_offer_item_without_buyer(&self) -> bool {
-        let tentatively_offer = self.nfts.values().any(|data| data.state.tentative_offer);
+        let tentatively_offer = self.tentative_offer_exists();
         let no_address = self.buyer_address.is_none();
         tentatively_offer && no_address
     }
@@ -327,7 +308,6 @@ impl Context {
             let nft_with_prices = self
                 .nfts
                 .iter()
-                .filter(|(_, data)| !data.state.tentative_offer)
                 .map(|(_, data)| {
                     let description = match &data.listing.description {
                         Some(description) => format!(", description: {}", description),
@@ -339,7 +319,10 @@ impl Context {
                     };
                     format!(
                         "\n- {} with min bid of {} ETH{}{}.\n",
-                        data.listing.name, data.listing.min_price, description, custom_prompt
+                        data.listing.name,
+                        format_ether(data.listing.min_price),
+                        description,
+                        custom_prompt
                     )
                 })
                 .collect::<Vec<String>>()
@@ -366,8 +349,6 @@ impl Context {
 
         let content = format!("{}{}{}", beginning, middle, end);
 
-        println!("Custom prompt looks like: {}", content);
-
         Message {
             role: "system".into(),
             content,
@@ -388,10 +369,9 @@ impl Context {
 
         let amount_str = parts[1].trim_end_matches(" ETH!");
 
-        let amount = match amount_str.parse::<f32>() {
-            Ok(amount) => amount,
-            Err(_) => return None,
-        };
+        let amount: U256 = parse_units(amount_str, "ether")
+            .unwrap_or(U256::ZERO.into())
+            .into();
 
         if let Some((current_key, _)) = self
             .nfts
@@ -414,23 +394,20 @@ impl Context {
         None
     }
 
-    fn handle_address_linking(&self, input: &str) -> Option<LinkAddressCommand> {
-        input
-            .strip_prefix(ADDRESS_PASSKEY)
-            .and_then(|potential_address| {
-                let address = potential_address.get(..42).unwrap_or_default();
-                if address.starts_with("0x") {
-                    self.nfts.iter().find_map(|(current_key, data)| {
-                        data.state.tentative_offer.then(|| LinkAddressCommand {
-                            nft_key: current_key.clone(),
-                            buyer_address: address.to_string(),
-                        })
-                    })
-                } else {
-                    println!("Invalid Ethereum address format.");
-                    None
+    fn handle_address_linking(&self, llm_response: &str) -> Option<LinkAddressCommand> {
+        let re = regex::Regex::new(r"0x[a-fA-F0-9]{40}").unwrap();
+        if let Some(caps) = re.captures(llm_response) {
+            if let Some(matched) = caps.get(0) {
+                let eth_address = matched.as_str();
+                if let Some(nft_key) = self.first_tentative_offer() {
+                    return Some(LinkAddressCommand {
+                        nft_key,
+                        buyer_address: eth_address.to_string(),
+                    });
                 }
-            })
+            }
+        }
+        None
     }
 }
 
@@ -458,7 +435,7 @@ impl<T> Buffer<T> {
 
 fn create_chat_params(messages: Vec<Message>) -> ChatParams {
     let chat_params = ChatParams {
-        model: "gpt-4-1106-preview".into(), 
+        model: "gpt-4-1106-preview".into(),
         messages,
         max_tokens: Some(150),
         temperature: Some(0.2),
