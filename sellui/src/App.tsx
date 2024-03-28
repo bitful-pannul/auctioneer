@@ -97,7 +97,7 @@ const InitialConfig: React.FC<{ onSubmit: (configData: ConfigData) => Promise<vo
         </div>
         <div className="flex flex-col">
           <label className="flex items-center self-stretch text-sm font-bold mb-2">
-            Private Wallet Address
+            Private Wallet Key
             <ExpandableSection className="ml-2">
               <ol className="list-decimal list-inside">
                 <li>Choose a wallet provider and create a new wallet.</li>
@@ -117,7 +117,7 @@ const InitialConfig: React.FC<{ onSubmit: (configData: ConfigData) => Promise<vo
             type="text"
             required
             className="appearance-none border rounded py-2 px-3 leading-tight focus:outline-none focus:shadow-outline"
-            placeholder="Private Wallet Address"
+            placeholder="Private Wallet Key"
             value={walletPk}
             onChange={e => setWalletPk(e.target.value)}
           />
