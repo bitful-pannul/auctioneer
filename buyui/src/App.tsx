@@ -136,9 +136,9 @@ const App = () => {
             <NetworkSwitcher />
             <WalletModal open={show} onOpenChange={toggleModal} close={() => setShow(false)}>
               {({ isLoading }) => (
-                <Button className="flex items-center mr-4">
+                <Button className="mr-4 bg-white text-black border-2" style={{ fontFamily: 'OpenSans' }}>
                   {isLoading && (
-                    <span className="i-line-md:loading-twotone-loop inline-flex mr-1 w-4 h-4 text-white"></span>
+                    <span className="i-line-md:loading-twotone-loop inline-flex mr-1 w-4 h-4"></span>
                   )}{' '}
                   {address ? shorten(address) : 'Connect Wallet'}
                 </Button>
@@ -179,17 +179,18 @@ const App = () => {
 
           {/* Form for NFT purchase details */}
           <div className="mt-8 space-y-4">
-            <input type="text" value={nftAddress} onChange={(e) => setNftAddress(e.target.value)} placeholder="NFT Address" className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <input type="number" value={nftId} onChange={(e) => setNftId(e.target.value)} placeholder="NFT ID" className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <input type="text" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="Price in WEI" className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <input type="text" value={uid} onChange={(e) => setUid(e.target.value)} placeholder="UID" className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <input type="number" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} placeholder="Valid Until" className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <input type="text" value={signature} onChange={(e) => setSignature(e.target.value)} placeholder="Signature" className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <div>
+            <input type="text" value={nftAddress} onChange={(e) => setNftAddress(e.target.value)} placeholder="NFT Address" className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none" />
+            <input type="number" value={nftId} onChange={(e) => setNftId(e.target.value)} placeholder="NFT ID" className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none" />
+            <input type="text" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="Price in WEI" className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none" />
+            <input type="text" value={uid} onChange={(e) => setUid(e.target.value)} placeholder="UID" className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none" />
+            <input type="number" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} placeholder="Valid Until" className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none" />
+            <input type="text" value={signature} onChange={(e) => setSignature(e.target.value)} placeholder="Signature" className="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none" />
+            <div className="flex items-center">
               <input
                 type="checkbox"
                 checked={checkboxState}
-                readOnly
+                // readOnly
+                className="mr-2"
               />
               <label>Escrow is allowed to transact NFT</label>
             </div>
@@ -198,7 +199,7 @@ const App = () => {
                 This NFT might not be approved for the escrow. Please doublecheck if the item is still available.
               </div>
             )}
-            <button onClick={handleBuyNFT} className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-700 disabled:bg-blue-300 transition duration-300 ease-in-out">Buy NFT</button>
+            <button onClick={handleBuyNFT} className="bg-orange font-[OpenSans] px-4 py-2 w-full">Buy NFT</button>
           </div>
           {errorMessage && (
             <div className="px-4 py-2 my-2 text-white bg-red-500 rounded">

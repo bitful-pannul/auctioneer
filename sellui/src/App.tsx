@@ -6,6 +6,7 @@ import { NetworkSwitcher } from "./components/SwitchNetworks";
 import { WalletModal } from "./components/WalletModal";
 import Button from "antd/es/button";
 import { shorten } from "@did-network/dapp-sdk";
+import classNames from "classnames";
 
 const ESCROW_ADDRESS = "0x4A3A2c0A385F017501544DcD9C6Eb3f6C63fc38b";
 
@@ -43,37 +44,38 @@ const InitialConfig: React.FC<{ onSubmit: (configData: ConfigData) => Promise<vo
   };
 
   return (
-    <main className="max-w-lg mx-auto mt-8">
+    <main className="max-w-lg mx-auto mt-8 flex flex-col">
       <h1 className="text-2xl font-bold mb-4">Initial Configuration</h1>
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label htmlFor="openai-key" className="block text-gray-700 text-sm font-bold mb-2">
+        <div className="flex flex-col">
+          <label htmlFor="openai-key" className="flex items-center self-stretch text-sm font-bold mb-2">
             OpenAI API Key
+            <ExpandableSection className="ml-2">
+              <ol className="list-decimal list-inside">
+                <li>Visit OpenAI's signup page.</li>
+                <li>Create an account and navigate to API section.</li>
+                <li>Click "New API Key" to generate a key.</li>
+                <li>Securely copy the API key displayed.</li>
+                <li>Type 'y' to proceed with entering the API key.</li>
+                <li>Paste the API key into the input.</li>
+              </ol>
+            </ExpandableSection>
           </label>
-          <ExpandableSection>
-            <ol className="list-decimal list-inside">
-              <li>Visit OpenAI's signup page.</li>
-              <li>Create an account and navigate to API section.</li>
-              <li>Click "New API Key" to generate a key.</li>
-              <li>Securely copy the API key displayed.</li>
-              <li>Type 'y' to proceed with entering the API key.</li>
-              <li>Paste the API key into the input.</li>
-            </ol>
-          </ExpandableSection>
           <input
+            type="text"
             id="openai-key"
             required
-            className="appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+            className="appearance-none border rounded py-2 px-3 leading-tight focus:outline-none focus:shadow-outline"
             placeholder="OpenAI API Key"
             value={openaiKey}
             onChange={e => setOpenaiKey(e.target.value)}
           />
         </div>
 
-        <div className="relative">
-          <label className="block text-gray-700 text-sm font-bold mb-2">
+        <div className="flex flex-col">
+          <label className="flex items-center text-sm font-bold mb-2">
             Telegram Bot API Key
-            <ExpandableSection>
+            <ExpandableSection className="ml-2">
               <ol className="list-decimal list-inside">
                 <li>Open Telegram and search for "@BotFather".</li>
                 <li>Start a conversation and type `/newbot`.</li>
@@ -85,17 +87,18 @@ const InitialConfig: React.FC<{ onSubmit: (configData: ConfigData) => Promise<vo
             </ExpandableSection>
           </label>
           <input
+            type="text"
             required
-            className="appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+            className="appearance-none border rounded py-2 px-3 leading-tight focus:outline-none focus:shadow-outline"
             placeholder="Telegram Bot API Key"
             value={telegramKey}
             onChange={e => setTelegramKey(e.target.value)}
           />
         </div>
-        <div className="relative">
-          <label className="block text-gray-700 text-sm font-bold mb-2">
+        <div className="flex flex-col">
+          <label className="flex items-center self-stretch text-sm font-bold mb-2">
             Private Wallet Address
-            <ExpandableSection>
+            <ExpandableSection className="ml-2">
               <ol className="list-decimal list-inside">
                 <li>Choose a wallet provider and create a new wallet.</li>
                 <li>Securely go through the wallet creation process.</li>
@@ -111,22 +114,24 @@ const InitialConfig: React.FC<{ onSubmit: (configData: ConfigData) => Promise<vo
             </ExpandableSection>
           </label>
           <input
+            type="text"
             required
-            className="appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+            className="appearance-none border rounded py-2 px-3 leading-tight focus:outline-none focus:shadow-outline"
             placeholder="Private Wallet Address"
             value={walletPk}
             onChange={e => setWalletPk(e.target.value)}
           />
         </div>
-        <div className="relative mt-4">
-          <label className="block text-gray-700 text-sm font-bold mb-2">
+        <div className="flex flex-col">
+          <label className="flex items-center self-stretch text-sm font-bold mb-2">
             Hosted URL (Optional)
-            <ExpandableSection>
+            <ExpandableSection className="ml-2">
               <p>Where users will be redirected to buy the items. Can be left empty if not applicable.</p>
             </ExpandableSection>
           </label>
           <input
-            className="appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+            type="text"
+            className="appearance-none border rounded py-2 px-3 leading-tight focus:outline-none focus:shadow-outline"
             placeholder="Hosted URL"
             value={hostedUrl}
             onChange={e => setHostedUrl(e.target.value)}
@@ -135,7 +140,7 @@ const InitialConfig: React.FC<{ onSubmit: (configData: ConfigData) => Promise<vo
 
         <button
           type="submit"
-          className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+          className="normal"
         >
           Submit
         </button>
@@ -144,19 +149,19 @@ const InitialConfig: React.FC<{ onSubmit: (configData: ConfigData) => Promise<vo
   );
 };
 
-const ExpandableSection = ({ children }: { children: React.ReactNode }) => {
+const ExpandableSection = ({ children, className }: { children: React.ReactNode, className?: string }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
-    <div className="mb-4">
+    <div className={classNames('relative', className)}>
       <button
         type="button"
-        className="text-gray-700 text-sm font-bold focus:outline-none flex items-center"
+        className="icon px-0 py-0 text-sm font-bold focus:outline-none flex items-center"
         onClick={() => setIsExpanded(!isExpanded)}
       >
         {isExpanded ? "▼" : "?"}
       </button>
-      {isExpanded && <div className="mt-2 text-gray-700 text-sm whitespace-normal">{children}</div>}
+      {isExpanded && <div className="mt-2 absolute min-w-200px bg-black rounded p-2 z-10 text-sm whitespace-normal">{children}</div>}
     </div>
   );
 };
@@ -252,93 +257,98 @@ const NFTManager: React.FC = () => {
     <main className="max-w-lg mx-auto mt-8">
       <h1 className="text-2xl font-bold mb-4">NFT Manager</h1>
       <form onSubmit={handleSubmitNFT} className="space-y-4">
-        <div>
-          <label htmlFor="nft-name" className="block text-gray-700 text-sm font-bold mb-2">
+        <div className="flex flex-col">
+          <label htmlFor="nft-name" className="flex items-center text-sm font-bold mb-2">
             NFT Name
-            <ExpandableSection>
+            <ExpandableSection className="ml-2">
               The name of the NFT. This should be a unique and descriptive title for the NFT you're managing.
             </ExpandableSection>
           </label>
           <input
             id="nft-name"
+            type="text"
             required
-            className="appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+            className="appearance-none border rounded py-2 px-3 leading-tight focus:outline-none focus:shadow-outline"
             placeholder="NFT Name"
             value={nftName}
             onChange={e => setNftName(e.target.value)}
           />
         </div>
 
-        <div>
-          <label htmlFor="nft-address" className="block text-gray-700 text-sm font-bold mb-2">
+        <div className="flex flex-col">
+          <label htmlFor="nft-address" className="flex items-center text-sm font-bold mb-2">
             Address
-            <ExpandableSection>
+            <ExpandableSection className="ml-2">
               Smart contract address of the NFT. It uniquely identifies the contract that manages the NFTs you're
               declaring.
             </ExpandableSection>
           </label>
           <input
             id="nft-address"
+            type="text"
             required
-            className="appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+            className="appearance-none border rounded py-2 px-3 leading-tight focus:outline-none focus:shadow-outline"
             placeholder="NFT Contract Address"
             value={nftAddress}
             onChange={e => setNftAddress(e.target.value)}
           />
         </div>
 
-        <div>
-          <label htmlFor="chain-id" className="block text-gray-700 text-sm font-bold mb-2">
+        <div className="flex flex-col">
+          <label htmlFor="chain-id" className="flex items-center text-sm font-bold mb-2">
             Chain ID
-            <ExpandableSection>
+            <ExpandableSection className="ml-2">
               What network nft you're selling. Change it with the button on the top right.
             </ExpandableSection>
           </label>
           <input
             id="chain-id"
+            type="text"
             disabled
-            className="appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline bg-gray-200"
+            className="appearance-none border rounded py-2 px-3 leading-tight focus:outline-none focus:shadow-outline bg-gray-200"
             value={chainId}
           />
         </div>
 
-        <div>
-          <label htmlFor="nft-id" className="block text-gray-700 text-sm font-bold mb-2">
+        <div className="flex flex-col">
+          <label htmlFor="nft-id" className="flex items-center text-sm font-bold mb-2">
             NFT ID{" "}
-            <ExpandableSection>The unique identifier for the specific NFT within its collection.</ExpandableSection>
+            <ExpandableSection className="ml-2">The unique identifier for the specific NFT within its collection.</ExpandableSection>
           </label>
           <input
             id="nft-id"
+            type="text"
             required
-            className="appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+            className="appearance-none border rounded py-2 px-3 leading-tight focus:outline-none focus:shadow-outline"
             placeholder="NFT ID"
             value={nftId}
             onChange={e => setNftId(e.target.value)}
           />
         </div>
 
-        <div>
-          <label htmlFor="min-price" className="block text-gray-700 text-sm font-bold mb-2">
+        <div className="flex flex-col">
+          <label htmlFor="min-price" className="flex items-center text-sm font-bold mb-2">
             Min Price
-            <ExpandableSection>
+            <ExpandableSection className="ml-2">
               The minimum price for the NFT. No contract lower than that price will be generated, and the bot will try
               to get more than the price out of the auction.
             </ExpandableSection>
           </label>
           <input
             id="min-price"
+            type="text"
             required
-            className="appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+            className="appearance-none border rounded py-2 px-3 leading-tight focus:outline-none focus:shadow-outline"
             placeholder="Minimum Price"
             value={minPrice}
             onChange={e => setMinPrice(e.target.value)}
           />
         </div>
 
-        <div>
-          <label htmlFor="nft-description" className="block text-gray-700 text-sm font-bold mb-2">
+        <div className="flex flex-col">
+          <label htmlFor="nft-description" className="flex items-center text-sm font-bold mb-2">
             Description of NFT (optional)
-            <ExpandableSection>
+            <ExpandableSection className="ml-2">
               <p>
                 Additional description you'll give to the bot for the sale of that NFT. Can be a backstory, or anything
                 you want.
@@ -347,23 +357,23 @@ const NFTManager: React.FC = () => {
           </label>
           <textarea
             id="nft-description"
-            className="appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+            className="appearance-none border rounded py-2 px-3 leading-tight focus:outline-none focus:shadow-outline"
             placeholder="NFT Description"
             value={nftDescription}
             onChange={e => setNftDescription(e.target.value)}
           ></textarea>
         </div>
 
-        <div>
-          <label htmlFor="sell-prompt" className="block text-gray-700 text-sm font-bold mb-2">
+        <div className="flex flex-col">
+          <label htmlFor="sell-prompt" className="flex items-center text-sm font-bold mb-2">
             Custom prompt on how to sell it (optional)
-            <ExpandableSection>
+            <ExpandableSection className="ml-2">
               <p>Give instructions on what the bot should do to sell it. For example, being greedy vs lenient.</p>
             </ExpandableSection>
           </label>
           <textarea
             id="sell-prompt"
-            className="appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+            className="appearance-none border rounded py-2 px-3 leading-tight focus:outline-none focus:shadow-outline"
             placeholder="Custom Selling Instructions"
             value={sellPrompt}
             onChange={e => setSellPrompt(e.target.value)}
@@ -372,7 +382,7 @@ const NFTManager: React.FC = () => {
 
         <button
           type="submit"
-          className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+          className="normal"
         >
           Submit NFT
         </button>
@@ -399,7 +409,6 @@ const NFTManager: React.FC = () => {
                   e.stopPropagation();
                   handleRemoveNFT(nft.id, nft.address, nft.chain);
                 }}
-                className="bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded focus:outline-none focus:shadow-outline"
               >
                 X
               </button>
@@ -450,9 +459,9 @@ const App: React.FC = () => {
           <NetworkSwitcher />
           <WalletModal open={show} onOpenChange={toggleModal} close={() => setShow(false)}>
             {({ isLoading }) => (
-              <Button className="flex items-center mr-4">
+              <Button className="mr-4 bg-white text-black border-2" style={{ fontFamily: 'OpenSans' }}>
                 {isLoading && (
-                  <span className="i-line-md:loading-twotone-loop inline-flex mr-1 w-4 h-4 text-white"></span>
+                  <span className="i-line-md:loading-twotone-loop inline-flex mr-1 w-4 h-4"></span>
                 )}{' '}
                 {address ? shorten(address) : 'Connect Wallet'}
               </Button>

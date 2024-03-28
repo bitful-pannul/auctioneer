@@ -39,9 +39,9 @@ const Home = () => {
             <NetworkSwitcher />
             <WalletModal open={show} onOpenChange={toggleModal} close={() => setShow(false)}>
               {({ isLoading }) => (
-                <Button className="flex items-center mr-4">
+                <Button className="mr-4 text-white bg-orange" style={{ fontFamily: 'OpenSans' }}>
                   {isLoading && (
-                    <span className="i-line-md:loading-twotone-loop inline-flex mr-1 w-4 h-4 text-white"></span>
+                    <span className="i-line-md:loading-twotone-loop inline-flex mr-1 w-4 h-4"></span>
                   )}{' '}
                   {address ? shorten(address) : 'Connect Wallet'}
                 </Button>
