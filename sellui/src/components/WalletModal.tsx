@@ -1,5 +1,5 @@
 import { shorten } from '@did-network/dapp-sdk'
-import { ReactNod, useState } from 'react'
+import { ReactNode, useMemo, useState } from 'react'
 import { useAccount, useConnect, useDisconnect } from 'wagmi'
 
 import { Button } from '../components/ui/button'
@@ -27,7 +27,7 @@ export function WalletModal(props: {
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogTrigger asChild>{props.children({ isLoading: isPending })}</DialogTrigger>
-      <DialogContent className="sm:max-w-[425px] md:top-70">
+      <DialogContent className="sm:max-w-[425px] md:top-70 bg-black">
         <DialogHeader>
           <DialogTitle>Wallet</DialogTitle>
           <DialogDescription>connect to web3</DialogDescription>
@@ -41,7 +41,7 @@ export function WalletModal(props: {
                   disconnect()
                   props.close?.()
                 }}
-                className="flex-center w-full"
+                className="bg-orange flex-center w-full font-[OpenSans]"
               >
                 disconnect <span className="i-carbon:cookie"></span>
               </Button>
@@ -58,7 +58,7 @@ export function WalletModal(props: {
                     })
                     props.close?.()
                   }}
-                  className="w-full mb-3"
+                  className="bg-white text-black border-white w-full mb-3 font-[OpenSans]"
                   size="lg"
                 >
                   {connector.name}
