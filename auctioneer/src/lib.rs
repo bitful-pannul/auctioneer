@@ -80,15 +80,6 @@ struct AddNFTArgs {
     pub min_price: String,
 }
 
-// TODO: Needed?
-/*
-/// offerings: (nft_address, nft_id) -> (rules prompt, min_price)
-type Offerings = HashMap<(Address, u64), (String, u64)>;
-
-/// sold offerings: (nft_address, nft_id) -> (price, link)
-type Sold = HashMap<(Address, u64), (u64, String)>;
- */
-
 wit_bindgen::generate!({
     path: "wit",
     world: "process",
@@ -477,7 +468,6 @@ fn handle_eth_message(message: &Message) -> HttpRequestOutcome {
             return HttpRequestOutcome::None;
         }
         Message::Request {
-            ref source,
             ref body,
             ..
         } => {

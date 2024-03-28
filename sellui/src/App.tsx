@@ -52,12 +52,10 @@ const InitialConfig: React.FC<{ onSubmit: (configData: ConfigData) => Promise<vo
           </label>
           <ExpandableSection>
             <ol className="list-decimal list-inside">
-              <li>Visit OpenAI's signup page.</li>
+              <li>Visit OpenAI's signup page (openai.com)</li>
               <li>Create an account and navigate to API section.</li>
-              <li>Click "New API Key" to generate a key.</li>
-              <li>Securely copy the API key displayed.</li>
-              <li>Type 'y' to proceed with entering the API key.</li>
-              <li>Paste the API key into the input.</li>
+              <li>Create a new api key with funds.</li>
+              <li>Copy the key over here</li>
             </ol>
           </ExpandableSection>
           <input
@@ -79,7 +77,6 @@ const InitialConfig: React.FC<{ onSubmit: (configData: ConfigData) => Promise<vo
                 <li>Start a conversation and type `/newbot`.</li>
                 <li>Follow prompts to create a new bot.</li>
                 <li>Securely copy the API key displayed.</li>
-                <li>Type 'y' to proceed with entering the bot API key.</li>
                 <li>Paste the bot API key into the input.</li>
               </ol>
             </ExpandableSection>
@@ -105,7 +102,6 @@ const InitialConfig: React.FC<{ onSubmit: (configData: ConfigData) => Promise<vo
                     <strong>Never share your private key.</strong>
                   </li>
                 </ul>
-                <li>Type 'y' to proceed with entering your Ethereum address.</li>
                 <li>Use your Ethereum address as directed.</li>
               </ol>
             </ExpandableSection>
