@@ -34,12 +34,11 @@ pub struct ContextManager {
 struct Context {
     /// The NFT listings and state for the user
     pub nfts: HashMap<NFTKey, NFTData>,
-    /// The buyer address for the user, which will get linked as soon as the user provides it 
+    /// The buyer address for the user, which will get linked as soon as the user provides it
     pub buyer_address: Option<String>,
     /// Small chat history buffer, kept small for saving $$$
     chat_history: Buffer<Message>,
 }
-
 
 /// Identifier for an NFT
 #[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
@@ -318,7 +317,7 @@ impl Context {
         messages
     }
 
-    /// Creates the system prompt for the chatbot, parsing the listings including rules and custom descriptions. 
+    /// Creates the system prompt for the chatbot, parsing the listings including rules and custom descriptions.
     /// When the bot requires the address, it adjusts the system prompt to ask for it exclusively.
     fn create_system_prompt(&self) -> Message {
         let beginning = "You are a a chatbot auctioneer selling NFTs. ";
@@ -329,7 +328,7 @@ impl Context {
             let nft_with_prices = self
                 .nfts
                 .iter()
-                .map(|(_, data)| {
+                .map(|(key, data)| {
                     let description = match &data.listing.description {
                         Some(description) => format!(", description: {}", description),
                         None => "".to_string(),
@@ -338,12 +337,18 @@ impl Context {
                         Some(custom_prompt) => format!(", and custom rules: {}", custom_prompt),
                         None => "".to_string(),
                     };
+                    let address_string = format!(
+                        "The address is {} and the id is {}.",
+                        data.listing.address, key.id
+                    );
+
                     format!(
-                        "\n- {} with min bid of {} ETH{}{}.\n",
+                        "\n- {} with min bid of {} ETH{}{}.{}\n",
                         data.listing.name,
                         format_ether(data.listing.min_price),
                         description,
-                        custom_prompt
+                        custom_prompt,
+                        address_string
                     )
                 })
                 .collect::<Vec<String>>()
@@ -361,7 +366,7 @@ impl Context {
             
             Iff the user is talking about a specific nft, follow custom rules, even disregarding general rules. Only follow one custom rule at a time.
 
-            Never reveal the min bid required to the user, only sell if minimum price is bid. If someone bids more, don't go back down for that nft. 
+            Never reveal the min bid required to the user, only sell if minimum price is bid. Only reveal the address and id of the nft when specifically asked for it. If someone bids more, don't go back down for that nft. 
             Iff a price is reached, write very clearly with no variation {}
             "###,
                 auctions, SOLD_PASSKEY
@@ -459,9 +464,9 @@ impl<T> Buffer<T> {
     }
 }
 
-/// The params to communicate with the LLM process. 
-/// Max tokens is kept low to save money. 
-/// Temperature is set to 0.2 to make the LLM rather predictable. 
+/// The params to communicate with the LLM process.
+/// Max tokens is kept low to save money.
+/// Temperature is set to 0.2 to make the LLM rather predictable.
 fn create_chat_params(messages: Vec<Message>) -> ChatParams {
     let chat_params = ChatParams {
         model: "gpt-4-1106-preview".into(),
