@@ -42,3 +42,6 @@ Main Entrypoint, where the communication with the frontend (through http), the c
 
 - [auctioneer/src/context.rs](https://github.com/kinode-dao/barter/blob/main/auctioneer/src/context.rs)
 Main context manager for the LLM. This app can handle multiple simultaneous chats, where the core NFTs being traded are synchronized. This is also where the system prompt as well as passphrases for LLM-triggered actions are being handled.
+
+- [Escrow Contract](https://github.com/bitful-pannul/NFTEscrow)
+Escrow contract that handles approvals and seller signature verifications. Small contract, 60 lines or so!
