@@ -5,6 +5,9 @@ use alloy_signer::LocalWallet;
 use kinode_process_lib::{get_state, set_state, Address};
 use llm_interface::api::openai::OpenaiApi;
 use serde::{Deserialize, Serialize};
+use serde::Deserializer;
+use serde::Serializer;
+use crate::helpers::hydrate_state;
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct InitialConfig {
@@ -14,18 +17,41 @@ pub struct InitialConfig {
     pub hosted_url: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug)]
 pub struct State {
+    pub our: Address,
     pub config: InitialConfig,
     pub context_manager: ContextManager,
+    // Non-serializable fields
+    pub tg_api: Api,
+    pub tg_worker: Address,
+    pub wallet: LocalWallet,
+    pub openai_api: OpenaiApi,
+}
+
+impl Serialize for State {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let serializable_part = (self.our.clone(), &self.config, &self.context_manager);
+        serializable_part.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for State {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let (our, config, context_manager) = Deserialize::deserialize(deserializer)?;
+        Ok(hydrate_state(&our, config, context_manager).expect("Failed to hydrate state"))
+    }
 }
 
 impl State {
-    pub fn new(config: InitialConfig) -> Self {
-        State {
-            config,
-            context_manager: ContextManager::new(&[]),
-        }
+    pub fn new(our: &Address, config: InitialConfig) -> Self {
+        hydrate_state(our, config, ContextManager::new(&[])).expect("Failed to hydrate state")
     }
 
     pub fn fetch() -> Option<State> {
@@ -40,13 +66,6 @@ impl State {
         let serialized_state = bincode::serialize(self).expect("Failed to serialize state");
         set_state(&serialized_state);
     }
-}
-
-pub struct Session {
-    pub tg_api: Api,
-    pub tg_worker: Address,
-    pub wallet: LocalWallet,
-    pub openai_api: OpenaiApi,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

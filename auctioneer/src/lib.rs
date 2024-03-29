@@ -1,5 +1,4 @@
-use alloy_primitives::{utils::format_ether, Address as EthAddress, FixedBytes};
-use alloy_signer::LocalWallet;
+use alloy_primitives::{utils::format_ether, Address as EthAddress};
 use alloy_sol_types::SolEvent;
 use frankenstein::{
     ChatId, SendMessageParams, TelegramApi, UpdateContent::ChannelPost as TgChannelPost,
@@ -8,14 +7,14 @@ use frankenstein::{
 use kinode_process_lib::{
     await_message, call_init, eth, get_blob, http, println, Address, Message,
 };
-use llm_interface::api::openai::spawn_openai_pkg;
 use std::{collections::HashMap, str::FromStr};
 
 mod tg_api;
-use tg_api::{init_tg_bot, TgResponse};
+use tg_api::TgResponse;
 
 mod context;
 mod contracts;
+mod helpers;
 
 mod structs;
 use structs::*;
@@ -81,8 +80,8 @@ fn remove_nft(body_bytes: &[u8]) -> HttpRequestOutcome {
     HttpRequestOutcome::RemoveNFT(nft_key)
 }
 
-fn list_nfts() -> HttpRequestOutcome {
-    let Some(state) = State::fetch() else {
+fn list_nfts(state: &mut Option<State>) -> HttpRequestOutcome {
+    let Some(state) = state else {
         println!("Failed to fetch state, need to have one first before listing NFTs");
         return HttpRequestOutcome::None;
     };
@@ -120,13 +119,9 @@ fn list_nfts() -> HttpRequestOutcome {
 
 fn handle_internal_messages(
     message: &Message,
-    session: &mut Option<Session>,
+    state: &mut Option<State>,
 ) -> anyhow::Result<()> {
-    let Some(session) = session else {
-        println!("Session not found! Returning");
-        return Ok(());
-    };
-    let Some(mut state) = State::fetch() else {
+    let Some(state) = state else {
         println!("State not found! Returning");
         return Ok(());
     };
@@ -140,7 +135,7 @@ fn handle_internal_messages(
             ref body,
             ..
         } => {
-            return handle_internal_request(source, body, session, &mut state);
+            return handle_internal_request(source, body, state);
         }
     }
 }
@@ -148,19 +143,15 @@ fn handle_internal_messages(
 fn handle_internal_request(
     source: &Address,
     body: &[u8],
-    session: &mut Session,
     state: &mut State,
 ) -> anyhow::Result<()> {
-    let Session {
+    let State {
+        context_manager,
+        config: _,
         tg_api,
         tg_worker,
         openai_api,
         ..
-    } = session;
-
-    let State {
-        context_manager,
-        config: _,
     } = state;
 
     let Ok(TgResponse::Update(tg_update)) = serde_json::from_slice(body) else {
@@ -211,7 +202,7 @@ fn handle_internal_request(
                 + 3600;
 
             let (uid, sig) = contracts::_create_offer(
-                &session.wallet,
+                &state.wallet,
                 &EthAddress::from_str(&finalized_offer.nft_key.address)?,
                 finalized_offer.nft_key.id,
                 &EthAddress::from_str(&finalized_offer.buyer_address)?,
@@ -237,17 +228,16 @@ fn handle_internal_request(
         }
     };
     tg_api.send_message(&params)?;
-
     state.save();
     Ok(())
 }
 
 call_init!(init);
 
-fn fetch_status() -> HttpRequestOutcome {
-    let (_state, status): (Option<State>, &str) = match State::fetch() {
-        Some(state) => (Some(state), "manage-nfts"),
-        None => (None, "config"),
+fn fetch_status(state: &mut Option<State>) -> HttpRequestOutcome {
+    let status = match state {
+        Some(_) => "manage-nfts",
+        None => "config",
     };
 
     let Ok(response) = serde_json::to_vec(&serde_json::json!({ "status": status })) else {
@@ -260,102 +250,44 @@ fn fetch_status() -> HttpRequestOutcome {
     HttpRequestOutcome::None
 }
 
-fn modify_state(http_request_outcome: HttpRequestOutcome) {
+fn update_state(
+    our: &Address,
+    state: &mut Option<State>,
+    http_request_outcome: HttpRequestOutcome,
+) {
     match http_request_outcome {
         HttpRequestOutcome::Config(config) => {
-            State::fetch().unwrap_or_else(|| State::new(config)).save();
+            match state {
+                Some(state) => {
+                    state.config = config;
+                    state.save();
+                }
+                None => *state = Some(State::new(our, config)),
+            }
         }
         HttpRequestOutcome::AddNFT(add_nft_args) => {
-            if let Some(mut state) = State::fetch() {
-                state.context_manager.add_nft(add_nft_args);
-                state.save();
-            } else {
-                println!("Failed to fetch state, need to have one first before adding NFTs");
+            match state {
+                Some(state) => {
+                    state.context_manager.add_nft(add_nft_args);
+                    state.save();
+                }
+                None => println!("Failed to fetch state, need to have one first before adding NFTs"),
             }
         }
         HttpRequestOutcome::RemoveNFT(nft_key) => {
-            if let Some(mut state) = State::fetch() {
-                state.context_manager.remove_nft(&nft_key);
-                state.save();
-            } else {
-                println!("Failed to fetch state, need to have one first before removing NFTs");
+            match state {
+                Some(state) => {
+                    state.context_manager.remove_nft(&nft_key);
+                    state.save();
+                }
+                None => println!("Failed to fetch state, need to have one first before removing NFTs"),
             }
         }
         HttpRequestOutcome::None => {}
     }
 }
 
-fn generate_session(our: &Address, state: &State) -> anyhow::Result<Session> {
-    let Ok(openai_api) = spawn_openai_pkg(our.clone(), &state.config.openai_key) else {
-        return Err(anyhow::anyhow!("openAI couldn't boot."));
-    };
-    let Ok((tg_api, tg_worker)) =
-        init_tg_bot(our.clone(), &state.config.telegram_bot_api_key, None)
-    else {
-        return Err(anyhow::anyhow!("tg bot couldn't boot."));
-    };
-
-    let Ok(wallet) = state.config.wallet_pk.parse::<LocalWallet>() else {
-        return Err(anyhow::anyhow!("couldn't parse private key."));
-    };
-
-    // subscribe to updates...
-    let escrow_address =
-        EthAddress::from_str("0x4A3A2c0A385F017501544DcD9C6Eb3f6C63fc38b").unwrap();
-
-    let mut seller_topic_bytes = [0u8; 32];
-    seller_topic_bytes[12..].copy_from_slice(&wallet.address().to_vec());
-    let seller_topic: FixedBytes<32> = FixedBytes::from_slice(&seller_topic_bytes);
-
-    let filter = eth::Filter::new()
-        .address(escrow_address)
-        .from_block(0)
-        .to_block(eth::BlockNumberOrTag::Latest)
-        .events(vec![
-            "NFTPurchased(address,address,uint256,address,uint256)",
-        ])
-        .topic1(seller_topic);
-
-    let sep = eth::Provider::new(11155111, 15);
-    let op = eth::Provider::new(10, 15);
-    let base = eth::Provider::new(8453, 15);
-    let arb = eth::Provider::new(42161, 15);
-
-    if let Err(e) = sep.subscribe(1, filter.clone()) {
-        println!("Failed to subscribe to sep: {:?}", e);
-    }
-    if let Err(e) = op.subscribe(2, filter.clone()) {
-        println!("Failed to subscribe to op: {:?}", e);
-    }
-    if let Err(e) = base.subscribe(3, filter.clone()) {
-        println!("Failed to subscribe to base: {:?}", e);
-    }
-    if let Err(e) = arb.subscribe(4, filter) {
-        println!("Failed to subscribe to arb: {:?}", e);
-    }
-
-    Ok(Session {
-        tg_api,
-        tg_worker,
-        wallet,
-        openai_api,
-    })
-}
-
-fn update_state_and_session(
-    our: &Address,
-    session: &mut Option<Session>,
-    http_request_outcome: HttpRequestOutcome,
-) {
-    modify_state(http_request_outcome.clone());
-    if let Some(state) = State::fetch() {
-        if matches!(http_request_outcome, HttpRequestOutcome::Config(_)) {
-            *session = generate_session(our, &state).ok();
-        }
-    }
-}
-
-fn handle_http_messages(message: &Message) -> HttpRequestOutcome {
+fn handle_http_messages(message: &Message, state: &mut Option<State>) -> HttpRequestOutcome {
     match message {
         Message::Response { .. } => {
             return HttpRequestOutcome::None;
@@ -377,7 +309,7 @@ fn handle_http_messages(message: &Message) -> HttpRequestOutcome {
             };
             match path.as_str() {
                 "/status" => {
-                    return fetch_status();
+                    return fetch_status(state);
                 }
                 "/config" => {
                     return config(&body.bytes);
@@ -389,7 +321,7 @@ fn handle_http_messages(message: &Message) -> HttpRequestOutcome {
                     return remove_nft(&body.bytes);
                 }
                 "/listnfts" => {
-                    return list_nfts();
+                    return list_nfts(state);
                 }
                 _ => {
                     return HttpRequestOutcome::None;
@@ -466,11 +398,7 @@ fn init(our: Address) {
 
     http::serve_ui(&our, "ui/buy/", false, false, vec!["/buy"]).expect("buy_ui serving errored!");
 
-    let mut session: Option<Session> = if let Some(state) = State::fetch() {
-        generate_session(&our, &state).ok()
-    } else {
-        None
-    };
+    let mut state = State::fetch();
 
     loop {
         let Ok(message) = await_message() else {
@@ -481,13 +409,13 @@ fn init(our: Address) {
         }
 
         if message.source().process == "http_server:distro:sys" {
-            let http_request_outcome = handle_http_messages(&message);
-            update_state_and_session(&our, &mut session, http_request_outcome);
+            let http_request_outcome = handle_http_messages(&message, &mut state);
+            update_state(&our, &mut state, http_request_outcome);
         } else if message.source().process == "eth:distro:sys" {
             let http_request_outcome = handle_eth_message(&message);
-            update_state_and_session(&our, &mut session, http_request_outcome);
+            update_state(&our, &mut state, http_request_outcome);
         } else {
-            match handle_internal_messages(&message, &mut session) {
+            match handle_internal_messages(&message, &mut state) {
                 Ok(()) => {}
                 Err(e) => {
                     println!("error: {:?}", e);
