@@ -12,25 +12,36 @@ use std::collections::{HashMap, VecDeque};
 /// The maximum number of messages to keep in the chat history buffer
 const BUFFER_CAPACITY: usize = 4;
 
+/// The passkey used when parsing LLM output to link an address given by a user
 const ADDRESS_PASSKEY: &str = "Thank you, reserving offer for ";
+/// The passkey used when parsing LLM output to initiate the sale of an NFT
 const SOLD_PASSKEY: &str = "SOLD <name_of_item> for <amount> ETH!";
 
+/// Telegram chat id
 type ChatId = i64;
+/// Map of chat ids to chat contexts
 type Contexts = HashMap<ChatId, Context>;
 
+/// Manages NFT listings and chat contexts for different users.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ContextManager {
     pub nft_listings: HashMap<NFTKey, NFTListing>,
     contexts: Contexts,
 }
 
+/// Represents a chat context for a single user chat
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct Context {
+    /// The NFT listings and state for the user
     pub nfts: HashMap<NFTKey, NFTData>,
+    /// The buyer address for the user, which will get linked as soon as the user provides it 
     pub buyer_address: Option<String>,
+    /// Small chat history buffer, kept small for saving $$$
     chat_history: Buffer<Message>,
 }
 
+
+/// Identifier for an NFT
 #[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
 pub struct NFTKey {
     pub id: u64,
@@ -121,6 +132,7 @@ impl ContextManager {
         }
     }
 
+    /// Adds a new NFT to the auction list and updates all downstream chat contexts with this new NFT.
     pub fn add_nft(&mut self, args: AddNFTArgs) {
         let AddNFTArgs {
             nft_name,
@@ -131,13 +143,13 @@ impl ContextManager {
             sell_prompt,
             min_price,
         } = args;
+        let Ok(min_price) = parse_units(&min_price, "ether") else {
+            return;
+        };
         let key = NFTKey {
             id: nft_id,
             address: nft_address.clone(),
             chain: chain_id,
-        };
-        let Ok(min_price) = parse_units(&min_price, "ether") else {
-            return;
         };
         let listing = NFTListing {
             name: nft_name,
@@ -156,6 +168,7 @@ impl ContextManager {
         }
     }
 
+    /// Handles a chat message from a user by finding or creating the chat context, processing the message, and returning the chatbot's response.
     pub fn chat(
         &mut self,
         chat_id: ChatId,
@@ -167,6 +180,8 @@ impl ContextManager {
         Ok(message.content)
     }
 
+    /// Processes the chatbot's response to potentially finalize an NFT offer based on the chat context and the response content.
+    /// This can also involve the linking of an address, or the changing of an NFTState in a context.
     pub fn act(&mut self, chat_id: ChatId, llm_response: &str) -> Option<FinalizedOfferCommand> {
         let offered_nft_key = {
             let context = self.chat_context(chat_id);
@@ -189,9 +204,9 @@ impl ContextManager {
         }
     }
 
+    /// Check whether the user has offered an nft, and if so, check if they have a buyer address.
+    /// If not, ask them for their address.
     pub fn additional_text(&mut self, chat_id: ChatId) -> Option<String> {
-        // Check whether the user has offered an nft, and if so, check if they have a buyer address.
-        // If not, ask them for their address.
         let context = self.chat_context(chat_id);
         if context.tentative_offer_exists() && context.buyer_address.is_none() {
             return Some(
@@ -208,6 +223,7 @@ impl ContextManager {
             .or_insert_with(|| Self::new_context(self.nft_listings.clone()))
     }
 
+    /// Removes an NFT from the auction list and updates all downstream chat contexts with this removed NFT.
     pub fn remove_nft(&mut self, nft_key: &NFTKey) {
         self.nft_listings.remove(nft_key);
         for (_, value) in self.contexts.iter_mut() {
@@ -242,6 +258,7 @@ impl ContextManager {
 }
 
 impl Context {
+    /// Processes a user's chat message, updates the chat history, and generates a response using openai API.
     pub fn chat(&mut self, openai_api: &OpenaiApi, text: &str) -> anyhow::Result<Message> {
         self.chat_history.push(Message {
             role: "user".into(),
@@ -254,6 +271,8 @@ impl Context {
         Ok(answer)
     }
 
+    /// Processes the chatbot's response to identify any tentative offers or link buyer addresses.
+    /// Returns NFT key if updates occur, otherwise `None`.
     fn process_llm_response(&mut self, llm_response: &str) -> Option<NFTKey> {
         if let Some(tentative_offer) = self.handle_offer(llm_response) {
             self.nfts.get_mut(&tentative_offer.nft_key).map(|data| {
@@ -299,6 +318,8 @@ impl Context {
         messages
     }
 
+    /// Creates the system prompt for the chatbot, parsing the listings including rules and custom descriptions. 
+    /// When the bot requires the address, it adjusts the system prompt to ask for it exclusively.
     fn create_system_prompt(&self) -> Message {
         let beginning = "You are a a chatbot auctioneer selling NFTs. ";
 
@@ -357,6 +378,7 @@ impl Context {
         }
     }
 
+    /// Parses the LLM response to identify a tentative offer which will get sent upstream.
     fn handle_offer(&self, input: &str) -> Option<TentativeOfferCommand> {
         if !input.starts_with("SOLD") {
             return None;
@@ -396,6 +418,7 @@ impl Context {
         None
     }
 
+    /// Checks whether the LLM response contains a command to link a buyer's address to an NFT purchase.
     fn handle_address_linking(&self, llm_response: &str) -> Option<LinkAddressCommand> {
         let re = regex::Regex::new(r"0x[a-fA-F0-9]{40}").unwrap();
         if let Some(caps) = re.captures(llm_response) {
@@ -413,6 +436,7 @@ impl Context {
     }
 }
 
+/// Simple buffer for message handling.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct Buffer<T> {
     capacity: usize,
@@ -435,6 +459,9 @@ impl<T> Buffer<T> {
     }
 }
 
+/// The params to communicate with the LLM process. 
+/// Max tokens is kept low to save money. 
+/// Temperature is set to 0.2 to make the LLM rather predictable. 
 fn create_chat_params(messages: Vec<Message>) -> ChatParams {
     let chat_params = ChatParams {
         model: "gpt-4-1106-preview".into(),
