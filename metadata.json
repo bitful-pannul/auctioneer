@@ -4,7 +4,7 @@
     "image": "https://i.imgur.com/a8fgpYQ.jpeg",
     "properties": {
         "package_name": "barter",
-        "current_version": "0.1.0",
+        "current_version": "0.1.1",
         "publisher": "appattacc.os",
         "mirrors": [
             "appattacc.os"
