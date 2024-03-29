@@ -31,7 +31,7 @@ const InitialConfig: React.FC<{ onSubmit: (configData: ConfigData) => Promise<vo
   const [openaiKey, setOpenaiKey] = useState("");
   const [telegramKey, setTelegramKey] = useState("");
   const [walletPk, setWalletPk] = useState("");
-  const [hostedUrl, setHostedUrl] = useState("http://localhost:8080/main:barter:appattacc.os"); // add default hosted website.
+  const [hostedUrl, setHostedUrl] = useState("https://appattacc.xyz"); // add default hosted website.
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -124,7 +124,7 @@ const InitialConfig: React.FC<{ onSubmit: (configData: ConfigData) => Promise<vo
           <label className="flex items-center self-stretch text-sm font-bold mb-2">
             Hosted URL (Optional)
             <ExpandableSection className="ml-2">
-              <p>Where users will be redirected to buy the items. Can be left empty if not applicable.</p>
+              <p>Where users will be redirected to buy the items. Defaults to a UI we host, but you can configure your own, even host it from your kinode too!</p>
             </ExpandableSection>
           </label>
           <input
