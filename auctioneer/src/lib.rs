@@ -508,7 +508,7 @@ fn handle_eth_message(message: &Message) -> HttpRequestOutcome {
 
 /// on startup, the auctioneer will need a tg token, open_ai token, and a private key holding the NFTs.
 fn init(our: Address) {
-    println!("initialize me!: {:?}", our);
+    println!("initialize me!");
     http::serve_ui(
         &our,
         "ui/sell/",
