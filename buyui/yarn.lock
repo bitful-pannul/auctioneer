@@ -3362,6 +3362,11 @@
   resolved "https://registry.npmjs.org/@unocss/core/-/core-0.57.7.tgz#4fe79e3d7327d5f25de0f82b80567fd8f5f82602"
   integrity sha512-1d36M0CV3yC80J0pqOa5rH1BX6g2iZdtKmIb3oSBN4AWnMCSrrJEPBrUikyMq2TEQTrYWJIVDzv5A9hBUat3TA==
 
+"@unocss/core@0.58.8", "@unocss/core@^0.58.8":
+  version "0.58.8"
+  resolved "https://registry.npmjs.org/@unocss/core/-/core-0.58.8.tgz#5b948a39e4fa847e2218780c2d999030e90d7f10"
+  integrity sha512-R3KuNTzF6G+bb2Qqg4LNLTWHh4TGU8iQJ4KOlpWHrPKAhDSCZ3XY9lSXoepCPwv+JcGEwA97Msa3zZ5p+QDoFg==
+
 "@unocss/extractor-arbitrary-variants@0.53.6":
   version "0.53.6"
   resolved "https://registry.npmjs.org/@unocss/extractor-arbitrary-variants/-/extractor-arbitrary-variants-0.53.6.tgz#f41d30204d46dbdcab0704566ee6e00c9c141a50"
@@ -3492,6 +3497,14 @@
     "@unocss/core" "^0.57.7"
     magic-string "^0.30.5"
 
+"@unocss/rule-utils@0.58.8":
+  version "0.58.8"
+  resolved "https://registry.npmjs.org/@unocss/rule-utils/-/rule-utils-0.58.8.tgz#d84259e33a4c1f56825e584085fa19fc9725ac3c"
+  integrity sha512-F7TKtTkiV9ICf8JMYO1+Eq/5zrrV7Fw966rQfHfIKrN6Vwo3tw84b5R0bLJghAFtb9UuD7q9eCfy6WBQK0d7Tw==
+  dependencies:
+    "@unocss/core" "^0.58.8"
+    magic-string "^0.30.8"
+
 "@unocss/scope@0.57.7":
   version "0.57.7"
   resolved "https://registry.npmjs.org/@unocss/scope/-/scope-0.57.7.tgz#f994050d171f99a9289518abfdc4e8140115dc4c"
@@ -3528,6 +3541,15 @@
   dependencies:
     "@unocss/core" "0.57.7"
     "@unocss/rule-utils" "0.57.7"
+    css-tree "^2.3.1"
+
+"@unocss/transformer-directives@^0.58.8":
+  version "0.58.8"
+  resolved "https://registry.npmjs.org/@unocss/transformer-directives/-/transformer-directives-0.58.8.tgz#ba1867f937d01ed12bce28b02e187b547e6b24f1"
+  integrity sha512-KdNzgmL5gdls1MTRvB7DKJRbLai1t8JeKCN+0H1lygzKMAhp8zItRei/F0MaSdbWdviNnGcAXqbCkbmGR72vaA==
+  dependencies:
+    "@unocss/core" "0.58.8"
+    "@unocss/rule-utils" "0.58.8"
     css-tree "^2.3.1"
 
 "@unocss/transformer-variant-group@0.57.7":
@@ -6762,7 +6784,7 @@ magic-string@^0.27.0:
   dependencies:
     "@jridgewell/sourcemap-codec" "^1.4.13"
 
-magic-string@^0.30.3, magic-string@^0.30.5:
+magic-string@^0.30.3, magic-string@^0.30.5, magic-string@^0.30.8:
   version "0.30.8"
   resolved "https://registry.npmjs.org/magic-string/-/magic-string-0.30.8.tgz#14e8624246d2bedba70d5462aa99ac9681844613"
   integrity sha512-ISQTe55T2ao7XtlAStud6qwYPZjE4GK1S/BeVPus4jrq6JuOnQ00YKQC581RWhR122W7msZV263KzVeLoqidyQ==

@@ -24,8 +24,6 @@ mod contracts;
 
 use crate::context::{ContextManager, NFTKey};
 
-const PROCESS_ID: &str = "auctioneer:auctioneer:template.os";
-
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 struct InitialConfig {
     pub openai_key: String,
@@ -435,10 +433,10 @@ fn handle_http_messages(message: &Message) -> HttpRequestOutcome {
             let Some(body) = get_blob() else {
                 return HttpRequestOutcome::None;
             };
-
-            let bound_path = http_request.bound_path(Some(PROCESS_ID));
-            println!("on path: {:?}", bound_path);
-            match bound_path {
+            let Ok(path) = http_request.path() else {
+                return HttpRequestOutcome::None;
+            };
+            match path.as_str() {
                 "/status" => {
                     return fetch_status();
                 }
@@ -467,10 +465,7 @@ fn handle_eth_message(message: &Message) -> HttpRequestOutcome {
         Message::Response { .. } => {
             return HttpRequestOutcome::None;
         }
-        Message::Request {
-            ref body,
-            ..
-        } => {
+        Message::Request { ref body, .. } => {
             let Ok(eth_result) = serde_json::from_slice::<eth::EthSubResult>(body) else {
                 return HttpRequestOutcome::None;
             };
@@ -513,8 +508,8 @@ fn handle_eth_message(message: &Message) -> HttpRequestOutcome {
 
 /// on startup, the auctioneer will need a tg token, open_ai token, and a private key holding the NFTs.
 fn init(our: Address) {
-    println!("initialize me!");
-    let _ = http::serve_ui(
+    println!("initialize me!: {:?}", our);
+    http::serve_ui(
         &our,
         "ui/sell/",
         true,
@@ -527,9 +522,10 @@ fn init(our: Address) {
             "/removenft",
             "/listnfts",
         ],
-    );
+    )
+    .expect("sell_ui serving errored!");
 
-    let _ = http::serve_ui(&our, "ui/buy/", false, false, vec!["/buy"]);
+    http::serve_ui(&our, "ui/buy/", false, false, vec!["/buy"]).expect("buy_ui serving errored!");
 
     let mut session: Option<Session> = if let Some(state) = State::fetch() {
         generate_session(&our, &state).ok()
@@ -555,7 +551,7 @@ fn init(our: Address) {
             match handle_internal_messages(&message, &mut session) {
                 Ok(()) => {}
                 Err(e) => {
-                    println!("auctioneer: error: {:?}", e);
+                    println!("error: {:?}", e);
                 }
             };
         }
