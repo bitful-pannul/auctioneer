@@ -6,75 +6,21 @@ use frankenstein::{
     UpdateContent::Message as TgMessage,
 };
 use kinode_process_lib::{
-    await_message, call_init, eth, get_blob, get_state, http, println, set_state, Address, Message,
+    await_message, call_init, eth, get_blob, http, println, Address, Message,
 };
-use serde::{Deserialize, Serialize};
+use llm_interface::api::openai::spawn_openai_pkg;
 use std::{collections::HashMap, str::FromStr};
 
 mod tg_api;
-use tg_api::{init_tg_bot, Api, TgResponse};
+use tg_api::{init_tg_bot, TgResponse};
 
 mod context;
-
-use llm_interface::api::openai::{spawn_openai_pkg, OpenaiApi};
-
 mod contracts;
 
-use crate::context::{ContextManager, NFTKey};
+mod structs;
+use structs::*;
 
-#[derive(Serialize, Deserialize, Default, Debug, Clone)]
-struct InitialConfig {
-    pub openai_key: String,
-    pub telegram_bot_api_key: String,
-    pub wallet_pk: String,
-    pub hosted_url: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct State {
-    pub config: InitialConfig,
-    pub context_manager: ContextManager,
-}
-
-impl State {
-    fn new(config: InitialConfig) -> Self {
-        State {
-            config,
-            context_manager: ContextManager::new(&[]),
-        }
-    }
-
-    fn fetch() -> Option<State> {
-        if let Some(state_bytes) = get_state() {
-            bincode::deserialize(&state_bytes).ok()
-        } else {
-            None
-        }
-    }
-
-    fn save(&self) {
-        let serialized_state = bincode::serialize(self).expect("Failed to serialize state");
-        set_state(&serialized_state);
-    }
-}
-
-struct Session {
-    tg_api: Api,
-    tg_worker: Address,
-    wallet: LocalWallet,
-    openai_api: OpenaiApi,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct AddNFTArgs {
-    pub nft_name: String,
-    pub nft_address: String,
-    pub nft_id: u64,
-    pub chain_id: u64,
-    pub nft_description: Option<String>,
-    pub sell_prompt: Option<String>,
-    pub min_price: String,
-}
+use crate::context::NFTKey;
 
 wit_bindgen::generate!({
     path: "wit",
@@ -409,14 +355,6 @@ fn update_state_and_session(
             *session = generate_session(our, &state).ok();
         }
     }
-}
-
-#[derive(Clone)]
-enum HttpRequestOutcome {
-    Config(InitialConfig),
-    AddNFT(AddNFTArgs),
-    RemoveNFT(NFTKey),
-    None,
 }
 
 fn handle_http_messages(message: &Message) -> HttpRequestOutcome {
