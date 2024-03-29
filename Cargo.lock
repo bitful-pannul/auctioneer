@@ -426,6 +426,7 @@ dependencies = [
  "alloy-sol-types",
  "anyhow",
  "bincode",
+ "common_types",
  "frankenstein",
  "hex",
  "kinode_process_lib",
@@ -576,6 +577,15 @@ name = "cfg-if"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
+
+[[package]]
+name = "common_types"
+version = "0.1.0"
+source = "git+https://github.com/kinode-dao/llm?branch=master#d2cf495fb10588387c815ae43c6a1a1de558db39"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "const-hex"

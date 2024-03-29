@@ -1,6 +1,6 @@
 use crate::llm_api::OpenaiApi;
-use crate::llm_types::openai::ChatParams;
-use crate::llm_types::openai::Message;
+use common_types::openai::ChatParams;
+use common_types::openai::Message;
 use crate::AddNFTArgs;
 use alloy_primitives::{
     utils::{format_ether, parse_units},

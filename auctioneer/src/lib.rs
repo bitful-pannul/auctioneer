@@ -15,7 +15,6 @@ mod tg_api;
 use tg_api::{init_tg_bot, Api, TgResponse};
 
 mod context;
-mod llm_types;
 
 mod llm_api;
 use llm_api::{spawn_openai_pkg, OpenaiApi};

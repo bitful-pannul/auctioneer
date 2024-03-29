@@ -4,7 +4,7 @@ use kinode_process_lib::{
 use std::str::FromStr;
 use serde::{Serialize, Deserialize};
 
-use crate::llm_types::openai::{ChatParams, ChatRequest, LLMRequest, LLMResponse, Message};
+use common_types::openai::{ChatParams, ChatRequest, LLMRequest, LLMResponse, Message, Provider};
 
 pub fn spawn_openai_pkg(our: Address, openai_key: &str) -> anyhow::Result<OpenaiApi> {
     let openai_pkg_path = format!("{}/pkg/openai.wasm", our.package_id());
@@ -46,6 +46,7 @@ impl OpenaiApi {
         let chat_request = ChatRequest {
             params: chat_params,
             api_key: self.openai_key.clone(),
+            provider: Provider::OpenAi,
         };
         let request = LLMRequest::Chat(chat_request);
         let msg = Request::new()
