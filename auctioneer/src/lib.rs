@@ -20,8 +20,6 @@ mod contracts;
 mod structs;
 use structs::*;
 
-use crate::context::NFTKey;
-
 wit_bindgen::generate!({
     path: "wit",
     world: "process",
