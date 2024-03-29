@@ -428,8 +428,8 @@ dependencies = [
  "bincode",
  "frankenstein",
  "hex",
- "interface",
  "kinode_process_lib",
+ "llm_interface",
  "rand",
  "regex",
  "serde",
@@ -1001,17 +1001,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "interface"
-version = "0.1.0"
-source = "git+https://github.com/kinode-dao/llm?branch=master#55d6fa145b319cdd25ef549fc717f31402ce144e"
-dependencies = [
- "anyhow",
- "kinode_process_lib",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "itertools"
 version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1118,6 +1107,17 @@ name = "linux-raw-sys"
 version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "01cda141df6706de531b6c46c3a33ecca755538219bd484262fa09410c13539c"
+
+[[package]]
+name = "llm_interface"
+version = "0.1.0"
+source = "git+https://github.com/kinode-dao/llm?branch=master#37dfb6056cbc9d24c4f17f0bb42237ea28c87b12"
+dependencies = [
+ "anyhow",
+ "kinode_process_lib",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "log"
