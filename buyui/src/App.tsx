@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useAccount, useReadContract, useWriteContract, useSwitchChain } from "wagmi";
+import { useAccount, useReadContract, useWriteContract, useSwitchChain, useChainId } from "wagmi";
 import { erc721Abi, parseUnits } from "viem";
 
 import NFTEscrow from "./abis/NFTEscrow.json";
@@ -12,9 +12,8 @@ import { shorten } from "@did-network/dapp-sdk";
 const ESCROW_ADDRESS = "0x4A3A2c0A385F017501544DcD9C6Eb3f6C63fc38b";
 
 const App = () => {
-  const { switchChain } = useSwitchChain();
+  const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync, status, failureReason } = useWriteContract();
-
   const { address } = useAccount()
 
   const [show, setShow] = useState(false)
@@ -39,6 +38,8 @@ const App = () => {
   const [metadata, setMetadata] = useState(null);
   const [metadataVisible, setMetadataVisible] = useState(false);
 
+  const [currentChain, setCurrentChain] = useState(null);
+
   const { data: tokenURIdata, isError, isLoading } = useReadContract({
     address: nftAddress,
     abi: erc721Abi,
@@ -54,9 +55,10 @@ const App = () => {
   });
 
   useEffect(() => {
-    // Example of using switchNetwork and handling chainId
-    if (chainId) {
-      switchChain({ chainId: parseInt(chainId) });
+    const checkChain = async () => {
+      if (chainId) {
+        await switchChainAsync({ chainId: parseInt(chainId) });
+      }
     }
     console.log("useEffect triggered");
     console.log("tokenURIdata:", tokenURIdata);
@@ -97,10 +99,10 @@ const App = () => {
       }
     };
 
-
+    checkChain();
     fetchMetadata();
     checkApproval();
-  }, [nftAddress, nftId, chainId, switchChain, tokenURIdata, approvalData]);
+  }, [nftAddress, nftId, chainId, switchChainAsync, tokenURIdata, approvalData]);
 
   // 40000000 WEI 
   // 0.000004 ETH
@@ -126,6 +128,16 @@ const App = () => {
       setTimeout(() => setErrorMessage(""), 5000);
     }
   };
+
+  const handleSwitchChain = async () => {
+    try {
+      if (chainId) {
+        await switchChainAsync({ chainId: parseInt(chainId) });
+      }
+    } catch (error) {
+      console.error("Failed to switch chain:", error);
+    }
+  }
 
 
   return (
@@ -198,6 +210,11 @@ const App = () => {
               <div className="px-4 py-2 my-2 text-white bg-red-500 rounded">
                 This NFT might not be approved for the escrow. Please doublecheck if the item is still available.
               </div>
+            )}
+            {chainId && chainId !== useChainId().toString() && (
+              <button onClick={handleSwitchChain} className="bg-orange font-[OpenSans] px-4 py-2 w-full">
+                Switch to Correct Network
+              </button>
             )}
             <button onClick={handleBuyNFT} className="bg-orange font-[OpenSans] px-4 py-2 w-full">Buy NFT</button>
           </div>
