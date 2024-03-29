@@ -117,10 +117,7 @@ fn list_nfts(state: &mut Option<State>) -> HttpRequestOutcome {
     HttpRequestOutcome::None
 }
 
-fn handle_internal_messages(
-    message: &Message,
-    state: &mut Option<State>,
-) -> anyhow::Result<()> {
+fn handle_internal_messages(message: &Message, state: &mut Option<State>) -> anyhow::Result<()> {
     let Some(state) = state else {
         println!("State not found! Returning");
         return Ok(());
@@ -140,11 +137,7 @@ fn handle_internal_messages(
     }
 }
 
-fn handle_internal_request(
-    source: &Address,
-    body: &[u8],
-    state: &mut State,
-) -> anyhow::Result<()> {
+fn handle_internal_request(source: &Address, body: &[u8], state: &mut State) -> anyhow::Result<()> {
     let State {
         context_manager,
         config: _,
@@ -258,31 +251,27 @@ fn update_state(
     match http_request_outcome {
         HttpRequestOutcome::Config(config) => {
             match state {
-                Some(state) => {
-                    state.config = config;
-                    state.save();
-                }
+                Some(state) => state.config = config,
                 None => *state = Some(State::new(our, config)),
             }
-        }
-        HttpRequestOutcome::AddNFT(add_nft_args) => {
-            match state {
-                Some(state) => {
-                    state.context_manager.add_nft(add_nft_args);
-                    state.save();
-                }
-                None => println!("Failed to fetch state, need to have one first before adding NFTs"),
+            if let Some(ref mut state) = state {
+                state.save();
             }
         }
-        HttpRequestOutcome::RemoveNFT(nft_key) => {
-            match state {
-                Some(state) => {
-                    state.context_manager.remove_nft(&nft_key);
-                    state.save();
-                }
-                None => println!("Failed to fetch state, need to have one first before removing NFTs"),
+        HttpRequestOutcome::AddNFT(add_nft_args) => match state {
+            Some(state) => {
+                state.context_manager.add_nft(add_nft_args);
+                state.save();
             }
-        }
+            None => println!("Failed to fetch state, need to have one first before adding NFTs"),
+        },
+        HttpRequestOutcome::RemoveNFT(nft_key) => match state {
+            Some(state) => {
+                state.context_manager.remove_nft(&nft_key);
+                state.save();
+            }
+            None => println!("Failed to fetch state, need to have one first before removing NFTs"),
+        },
         HttpRequestOutcome::None => {}
     }
 }
