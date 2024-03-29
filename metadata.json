@@ -1,11 +1,11 @@
 {
-    "name": "auctioneer",
+    "name": "main",
     "description": "",
     "image": "",
     "properties": {
-        "package_name": "auctioneer",
+        "package_name": "barter",
         "current_version": "0.1.0",
-        "publisher": "template.os",
+        "publisher": "appattacc.os",
         "mirrors": [],
         "code_hashes": {
             "0.1.0": ""

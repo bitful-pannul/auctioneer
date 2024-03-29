@@ -1,15 +1,16 @@
 [
     {
-        "process_name": "auctioneer",
+        "process_name": "main",
         "process_wasm_path": "/auctioneer.wasm",
         "on_exit": "Restart",
-        "request_networking": true,
+        "request_networking": false,
         "request_capabilities": [
             "http_server:distro:sys",
             "http_client:distro:sys",
             "openai:llm:kinode",
             "eth:distro:sys",
-            "vfs:distro:sys"
+            "vfs:distro:sys",
+            "terminal:terminal:sys"
         ],
         "grant_capabilities": [],
         "public": true

@@ -31,7 +31,7 @@ const InitialConfig: React.FC<{ onSubmit: (configData: ConfigData) => Promise<vo
   const [openaiKey, setOpenaiKey] = useState("");
   const [telegramKey, setTelegramKey] = useState("");
   const [walletPk, setWalletPk] = useState("");
-  const [hostedUrl, setHostedUrl] = useState("http://localhost:8080/auctioneer:auctioneer:template.os"); // add default hosted website.
+  const [hostedUrl, setHostedUrl] = useState("http://localhost:8080/main:barter:appattacc.os"); // add default hosted website.
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -189,7 +189,7 @@ const NFTManager: React.FC = () => {
   }, []);
 
   const listNFTs = async () => {
-    const response = await fetch("/auctioneer:auctioneer:template.os/listnfts", {
+    const response = await fetch("/main:barter:appattacc.os/listnfts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
     });
@@ -218,7 +218,7 @@ const NFTManager: React.FC = () => {
     });
     console.log("did approve!");
 
-    await fetch("/auctioneer:auctioneer:template.os/addnft", {
+    await fetch("/main:barter:appattacc.os/addnft", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -241,7 +241,7 @@ const NFTManager: React.FC = () => {
   };
 
   const handleRemoveNFT = async (id: number, address: string, chain: number) => {
-    await fetch("/auctioneer:auctioneer:template.os/removenft", {
+    await fetch("/main:barter:appattacc.os/removenft", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -434,7 +434,7 @@ const App: React.FC = () => {
   }, []);
 
   const fetchStatus = async () => {
-    const response = await fetch("/auctioneer:auctioneer:template.os/status", {
+    const response = await fetch("/main:barter:appattacc.os/status", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "config" }),
@@ -444,7 +444,7 @@ const App: React.FC = () => {
   };
 
   const handleConfigSubmit = async (configData: ConfigData) => {
-    await fetch("/auctioneer:auctioneer:template.os/config", {
+    await fetch("/main:barter:appattacc.os/config", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(configData),
