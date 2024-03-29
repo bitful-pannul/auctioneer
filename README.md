@@ -33,3 +33,12 @@ You can now message your TG bot at the link provided by botfather in the setup, 
 When a link has been sent by the bot, you can easily buy it f.ex. MetaMask.
 
 ![Barter Interface](imgs/5.jpeg)
+
+## Technical Entrypoints
+For developers interested in diving deeper, explore the core codebase through these files:
+
+- [auctioneer/src/lib.rs](https://github.com/kinode-dao/barter/blob/main/auctioneer/src/lib.rs)
+Main Entrypoint, where the communication with the frontend (through http), the chains, and the internal kinode messages are handled. This is where internal state is being managed, loaded and saved.
+
+- [auctioneer/src/context.rs](https://github.com/kinode-dao/barter/blob/main/auctioneer/src/context.rs)
+Main context manager for the LLM. This app can handle multiple simultaneous chats, where the core NFTs being traded are synchronized. This is also where the system prompt as well as passphrases for LLM-triggered actions are being handled.
