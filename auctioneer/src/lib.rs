@@ -88,7 +88,7 @@ fn config(body_bytes: &[u8]) -> HttpRequestOutcome {
     let Ok(initial_config) = serde_json::from_slice::<InitialConfig>(body_bytes) else {
         return HttpRequestOutcome::None;
     };
-    let _ = http::send_response(
+    http::send_response(
         http::StatusCode::OK,
         Some(HashMap::from([(
             "Content-Type".to_string(),
@@ -107,7 +107,7 @@ fn add_nft(body_bytes: &[u8]) -> HttpRequestOutcome {
             return HttpRequestOutcome::None;
         }
     };
-    let _ = http::send_response(
+    http::send_response(
         http::StatusCode::OK,
         Some(HashMap::from([(
             "Content-Type".to_string(),
@@ -126,7 +126,7 @@ fn remove_nft(body_bytes: &[u8]) -> HttpRequestOutcome {
             return HttpRequestOutcome::None;
         }
     };
-    let _ = http::send_response(
+    http::send_response(
         http::StatusCode::OK,
         Some(HashMap::from([(
             "Content-Type".to_string(),
@@ -162,7 +162,7 @@ fn list_nfts() -> HttpRequestOutcome {
 
     let response_body = serde_json::to_string(&nft_listings).unwrap_or_else(|_| "[]".to_string());
 
-    let _ = http::send_response(
+    http::send_response(
         http::StatusCode::OK,
         Some(HashMap::from([(
             "Content-Type".to_string(),
@@ -312,9 +312,8 @@ fn fetch_status() -> HttpRequestOutcome {
     };
 
     let headers = HashMap::from([("Content-Type".to_string(), "application/json".to_string())]);
-    let _ = http::send_response(http::StatusCode::OK, Some(headers), response);
-
-    return HttpRequestOutcome::None;
+    http::send_response(http::StatusCode::OK, Some(headers), response);
+    HttpRequestOutcome::None
 }
 
 fn modify_state(http_request_outcome: HttpRequestOutcome) {
@@ -378,10 +377,18 @@ fn generate_session(our: &Address, state: &State) -> anyhow::Result<Session> {
     let base = eth::Provider::new(8453, 15);
     let arb = eth::Provider::new(42161, 15);
 
-    let _ = sep.subscribe(1, filter.clone());
-    let _ = op.subscribe(2, filter.clone());
-    let _ = base.subscribe(3, filter.clone());
-    let _ = arb.subscribe(4, filter);
+    if let Err(e) = sep.subscribe(1, filter.clone()) {
+        println!("Failed to subscribe to sep: {:?}", e);
+    }
+    if let Err(e) = op.subscribe(2, filter.clone()) {
+        println!("Failed to subscribe to op: {:?}", e);
+    }
+    if let Err(e) = base.subscribe(3, filter.clone()) {
+        println!("Failed to subscribe to base: {:?}", e);
+    }
+    if let Err(e) = arb.subscribe(4, filter) {
+        println!("Failed to subscribe to arb: {:?}", e);
+    }
 
     Ok(Session {
         tg_api,
@@ -395,15 +402,13 @@ fn update_state_and_session(
     our: &Address,
     session: &mut Option<Session>,
     http_request_outcome: HttpRequestOutcome,
-) -> anyhow::Result<()> {
+) {
     modify_state(http_request_outcome.clone());
     if let Some(state) = State::fetch() {
         if matches!(http_request_outcome, HttpRequestOutcome::Config(_)) {
             *session = generate_session(our, &state).ok();
         }
     }
-
-    Ok(())
 }
 
 #[derive(Clone)]
@@ -541,10 +546,10 @@ fn init(our: Address) {
 
         if message.source().process == "http_server:distro:sys" {
             let http_request_outcome = handle_http_messages(&message);
-            let _ = update_state_and_session(&our, &mut session, http_request_outcome);
+            update_state_and_session(&our, &mut session, http_request_outcome);
         } else if message.source().process == "eth:distro:sys" {
             let http_request_outcome = handle_eth_message(&message);
-            let _ = update_state_and_session(&our, &mut session, http_request_outcome);
+            update_state_and_session(&our, &mut session, http_request_outcome);
         } else {
             match handle_internal_messages(&message, &mut session) {
                 Ok(()) => {}
