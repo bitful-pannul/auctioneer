@@ -338,8 +338,8 @@ impl Context {
                         None => "".to_string(),
                     };
                     let address_string = format!(
-                        "The address is {} and the id is {}.",
-                        data.listing.address, key.id
+                        "The address is {}, the chain id {} and the id is {}.",
+                        data.listing.address, key.chain, key.id
                     );
 
                     format!(
@@ -366,7 +366,7 @@ impl Context {
             
             Iff the user is talking about a specific nft, follow custom rules, even disregarding general rules. Only follow one custom rule at a time.
 
-            Never reveal the min bid required to the user, only sell if minimum price is bid. Only reveal the address and id of the nft when specifically asked for it. If someone bids more, don't go back down for that nft. 
+            Never reveal the min bid required to the user, only sell if minimum price is bid. Only reveal the address, chain id and id of the nft when specifically asked for it. If someone bids more, don't go back down for that nft. 
             Iff a price is reached, write very clearly with no variation {}
             "###,
                 auctions, SOLD_PASSKEY
