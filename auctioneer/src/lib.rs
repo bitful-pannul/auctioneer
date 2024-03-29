@@ -118,6 +118,25 @@ fn add_nft(body_bytes: &[u8]) -> HttpRequestOutcome {
     return HttpRequestOutcome::AddNFT(add_nft_args);
 }
 
+fn remove_nft(body_bytes: &[u8]) -> HttpRequestOutcome {
+    let nft_key: NFTKey = match serde_json::from_slice(body_bytes) {
+        Ok(args) => args,
+        Err(e) => {
+            println!("Failed to parse RemoveNFTArgs: {:?}", e);
+            return HttpRequestOutcome::None;
+        }
+    };
+    let _ = http::send_response(
+        http::StatusCode::OK,
+        Some(HashMap::from([(
+            "Content-Type".to_string(),
+            "application/json".to_string(),
+        )])),
+        b"{\"message\": \"success\"}".to_vec(),
+    );
+    HttpRequestOutcome::RemoveNFT(nft_key)
+}
+
 fn list_nfts() -> HttpRequestOutcome {
     let Some(state) = State::fetch() else {
         println!("Failed to fetch state, need to have one first before listing NFTs");
@@ -153,25 +172,6 @@ fn list_nfts() -> HttpRequestOutcome {
     );
 
     HttpRequestOutcome::None
-}
-
-fn remove_nft(body_bytes: &[u8]) -> HttpRequestOutcome {
-    let nft_key: NFTKey = match serde_json::from_slice(body_bytes) {
-        Ok(args) => args,
-        Err(e) => {
-            println!("Failed to parse RemoveNFTArgs: {:?}", e);
-            return HttpRequestOutcome::None;
-        }
-    };
-    let _ = http::send_response(
-        http::StatusCode::OK,
-        Some(HashMap::from([(
-            "Content-Type".to_string(),
-            "application/json".to_string(),
-        )])),
-        b"{\"message\": \"success\"}".to_vec(),
-    );
-    HttpRequestOutcome::RemoveNFT(nft_key)
 }
 
 fn handle_internal_messages(
