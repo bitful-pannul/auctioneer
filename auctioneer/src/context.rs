@@ -1,6 +1,6 @@
-use crate::llm_api::OpenaiApi;
-use crate::llm_types::openai::ChatParams;
-use crate::llm_types::openai::Message;
+use llm_interface::openai::ChatParams;
+use llm_interface::openai::Message;
+use llm_interface::api::openai::OpenaiApi;
 use crate::AddNFTArgs;
 use alloy_primitives::{
     utils::{format_ether, parse_units},
@@ -8,6 +8,7 @@ use alloy_primitives::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
+use crate::structs::*;
 
 /// The maximum number of messages to keep in the chat history buffer
 const BUFFER_CAPACITY: usize = 4;
@@ -22,12 +23,6 @@ type ChatId = i64;
 /// Map of chat ids to chat contexts
 type Contexts = HashMap<ChatId, Context>;
 
-/// Manages NFT listings and chat contexts for different users.
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ContextManager {
-    pub nft_listings: HashMap<NFTKey, NFTListing>,
-    contexts: Contexts,
-}
 
 /// Represents a chat context for a single user chat
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -40,68 +35,11 @@ struct Context {
     chat_history: Buffer<Message>,
 }
 
-/// Identifier for an NFT
-#[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
-pub struct NFTKey {
-    pub id: u64,
-    pub chain: u64,
-    pub address: String,
-}
-
+/// Manages NFT listings and chat contexts for different users.
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct NFTData {
-    pub listing: NFTListing,
-    pub state: NFTState,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct NFTListing {
-    pub name: String,
-    pub min_price: U256,
-    pub address: String,
-    pub description: Option<String>,
-    pub custom_prompt: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-struct NFTState {
-    pub highest_bid: U256,
-    pub tentative_offer: bool,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-enum AuctioneerCommand {
-    /// Tentative sell is when the user has said they've offer an NFT, but we're not selling unless there's a buyer address
-    TentativeOffer(TentativeOfferCommand),
-    /// Finalizing a sale means linking the buyer address to the NFT, then guaranteed offer
-    LinkAddress(LinkAddressCommand),
-    FinalizedOffer(FinalizedOfferCommand),
-    Empty,
-}
-
-impl Default for AuctioneerCommand {
-    fn default() -> Self {
-        AuctioneerCommand::Empty
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct FinalizedOfferCommand {
-    pub nft_key: NFTKey,
-    pub buyer_address: String,
-    pub price: U256,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct TentativeOfferCommand {
-    pub nft_key: NFTKey,
-    pub price: U256,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct LinkAddressCommand {
-    pub nft_key: NFTKey,
-    pub buyer_address: String,
+pub struct ContextManager {
+    pub nft_listings: HashMap<NFTKey, NFTListing>,
+    contexts: Contexts,
 }
 
 impl ContextManager {
