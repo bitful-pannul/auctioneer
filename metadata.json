@@ -4,13 +4,13 @@
     "image": "https://i.imgur.com/a8fgpYQ.jpeg",
     "properties": {
         "package_name": "barter",
-        "current_version": "0.1.4",
+        "current_version": "0.1.5",
         "publisher": "appattacc.os",
         "mirrors": [
             "appattacc.os"
         ],
         "code_hashes": {
-            "0.1.4": "0d1323f76b8d5c72e47b78c54674cc96db419b7e357eda8f832bf0038dc35696"
+            "0.1.5": "e9134ba1185192bc585f4bed4629b7778a16faca84696664c4de9ddb4c301d0f"
         }
     },
     "external_url": "https://github.com/bitful-pannul/auctioneer/",
