@@ -5,7 +5,7 @@ use frankenstein::{
     UpdateContent::Message as TgMessage,
 };
 use kinode_process_lib::{
-    await_message, call_init, eth, get_blob, http, println, Address, Message,
+    await_message, call_init, eth, get_blob, http, println, Address, Message, Request,
 };
 use std::{collections::HashMap, str::FromStr};
 
@@ -366,6 +366,8 @@ fn handle_eth_message(message: &Message) -> HttpRequestOutcome {
     HttpRequestOutcome::None
 }
 
+const ICON: &str = include_str!("ICON");
+
 /// on startup, the auctioneer will need a tg token, open_ai token, and a private key holding the NFTs.
 fn init(our: Address) {
     println!("initialize me!");
@@ -384,6 +386,23 @@ fn init(our: Address) {
         ],
     )
     .expect("sell_ui serving errored!");
+
+    // add ourselves to the homepage
+    Request::to(("our", "homepage", "homepage", "sys"))
+        .body(
+            serde_json::json!({
+                "Add": {
+                    "label": "Barter",
+                    "icon": ICON, // some base64 encoded image
+                    "path": "/",
+                }
+            })
+            .to_string()
+            .as_bytes()
+            .to_vec(),
+        )
+        .send()
+        .unwrap();
 
     http::serve_ui(&our, "ui/buy/", false, false, vec!["/buy"]).expect("buy_ui serving errored!");
 
