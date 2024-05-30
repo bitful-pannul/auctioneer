@@ -366,6 +366,7 @@ fn handle_eth_message(message: &Message) -> HttpRequestOutcome {
     HttpRequestOutcome::None
 }
 
+// icon
 const ICON: &str = include_str!("ICON");
 
 /// on startup, the auctioneer will need a tg token, open_ai token, and a private key holding the NFTs.
