@@ -1,16 +1,16 @@
 {
     "name": "Barter",
     "description": "AI negotiator for selling your NFTs",
-    "image": "https://i.imgur.com/a8fgpYQ.jpeg",
+    "image": "https://i.imgur.com/kaEGR12.png",
     "properties": {
         "package_name": "barter",
-        "current_version": "0.1.5",
+        "current_version": "0.1.6",
         "publisher": "appattacc.os",
         "mirrors": [
             "appattacc.os"
         ],
         "code_hashes": {
-            "0.1.5": "e9134ba1185192bc585f4bed4629b7778a16faca84696664c4de9ddb4c301d0f"
+            "0.1.6": "e9134ba1185192bc585f4bed4629b7778a16faca84696664c4de9ddb4c301d0f"
         }
     },
     "external_url": "https://github.com/bitful-pannul/auctioneer/",
