@@ -1,5 +1,5 @@
-use alloy_primitives::{keccak256, Address, U256};
-use alloy_signer::{LocalWallet, Signature, SignerSync};
+use alloy::signers::{local::PrivateKeySigner, SignerSync};
+use alloy_primitives::{keccak256, Address, Signature, U256};
 use alloy_sol_types::{sol, SolValue};
 // use kinode_process_lib::println;
 
@@ -16,7 +16,7 @@ sol! {
 
 /// Create a Sell offer, returning uid and signature buyer can use to transfer NFT out of escrow!
 pub fn _create_offer(
-    wallet: &LocalWallet,
+    wallet: &PrivateKeySigner,
     nft_address: &Address,
     nft_id: u64,
     buyer: &Address,

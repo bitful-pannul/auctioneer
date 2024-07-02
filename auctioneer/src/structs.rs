@@ -1,12 +1,12 @@
 use crate::context::ContextManager;
+use crate::helpers::hydrate_state;
 use crate::tg_api::Api;
+use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::U256;
-use alloy_signer::LocalWallet;
 use kinode_process_lib::{get_state, set_state, Address};
-use serde::{Deserialize, Serialize};
 use serde::Deserializer;
 use serde::Serializer;
-use crate::helpers::hydrate_state;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct InitialConfig {
@@ -24,8 +24,8 @@ pub struct State {
     // Non-serializable fields
     pub tg_api: Api,
     pub tg_worker: Address,
-    pub wallet: LocalWallet,
-    pub openai_address: Address, 
+    pub wallet: PrivateKeySigner,
+    pub openai_address: Address,
 }
 
 impl Serialize for State {

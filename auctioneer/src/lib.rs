@@ -331,8 +331,7 @@ fn handle_eth_message(message: &Message) -> HttpRequestOutcome {
                 Ok(eth::EthSub { result, id }) => {
                     if let eth::SubscriptionResult::Log(log) = result {
                         // pre_filtered by seller. nice.s
-                        let Ok((nft, nft_id, buyer, price)) =
-                            contracts::NFTPurchased::abi_decode_data(&log.data, true)
+                        let Ok(nft) = contracts::NFTPurchased::decode_log_data(&log.data(), true)
                         else {
                             return HttpRequestOutcome::None;
                         };
@@ -347,11 +346,11 @@ fn handle_eth_message(message: &Message) -> HttpRequestOutcome {
 
                         println!(
                             "sell event with all of these: {:?}, {:?}, {:?}, {:?}",
-                            nft, nft_id, buyer, price
+                            nft.seller, nft.tokenId, nft.price, nft.buyer
                         );
                         return HttpRequestOutcome::RemoveNFT(NFTKey {
-                            address: nft.to_string(),
-                            id: nft_id.to::<u64>(),
+                            address: nft.seller.to_string(),
+                            id: nft.tokenId.to::<u64>(),
                             chain,
                         });
                     }
