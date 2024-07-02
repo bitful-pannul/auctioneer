@@ -6,7 +6,41 @@ use kinode_process_lib::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::{path::PathBuf, str::FromStr};
+use std::str::FromStr;
+use std::path::PathBuf;
+
+use llm_interface::openai::{LLMRequest, RegisterApiKeyRequest};
+
+#[allow(unused)]
+pub fn init_openai(our: Address, api_key: &str) -> anyhow::Result<Address> {
+    let openai_wasm_path = format!("{}/pkg/openai.wasm", our.package_id());
+
+    let our_caps = our_capabilities();
+    let http_client = ProcessId::from_str("http_client:distro:sys").unwrap();
+
+    let process_id = spawn(
+        None,
+        &openai_wasm_path,
+        OnExit::Restart,
+        our_caps,
+        vec![http_client],
+        false,
+    )?;
+
+    let worker_address = Address {
+        node: our.node.clone(),
+        process: process_id.clone(),
+    };
+
+    let api_message = LLMRequest::RegisterOpenaiApiKey(RegisterApiKeyRequest {
+        api_key: api_key.to_string(),
+    });
+    let _ = Request::to(worker_address.clone())
+        .body(serde_json::to_vec(&api_message)?)
+        .send_and_await_response(30)??;
+
+    Ok(worker_address)
+}
 
 static BASE_API_URL: &str = "https://api.telegram.org/bot";
 

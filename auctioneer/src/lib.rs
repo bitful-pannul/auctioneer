@@ -20,11 +20,8 @@ mod structs;
 use structs::*;
 
 wit_bindgen::generate!({
-    path: "wit",
-    world: "process",
-    exports: {
-        world: Component,
-    },
+    path: "target/wit",
+    world: "process-v0",
 });
 
 fn config(body_bytes: &[u8]) -> HttpRequestOutcome {
@@ -143,7 +140,7 @@ fn handle_internal_request(source: &Address, body: &[u8], state: &mut State) -> 
         config: _,
         tg_api,
         tg_worker,
-        openai_api,
+        openai_address,
         ..
     } = state;
 
@@ -181,7 +178,7 @@ fn handle_internal_request(source: &Address, body: &[u8], state: &mut State) -> 
         context_manager.clear(msg.chat.id);
         "Reset succesful!".to_string()
     } else {
-        let mut text = context_manager.chat(msg.chat.id, &text, &openai_api)?;
+        let mut text = context_manager.chat(msg.chat.id, &text, &openai_address)?;
         let finalized_offer_opt = context_manager.act(msg.chat.id, &text);
         if let Some(additional_text) = &context_manager.additional_text(msg.chat.id) {
             text += additional_text;

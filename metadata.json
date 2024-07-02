@@ -11,7 +11,9 @@
         ],
         "code_hashes": {
             "0.1.7": "d33898bc00e2cfba16e46903de0845e13d24038a45422981f0358e3e24c43896"
-        }
+        }, 
+        "wit_version": 0,
+        "dependencies": []
     },
     "external_url": "https://github.com/bitful-pannul/auctioneer/",
     "animation_url": "",

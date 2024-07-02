@@ -3,7 +3,6 @@ use crate::tg_api::Api;
 use alloy_primitives::U256;
 use alloy_signer::LocalWallet;
 use kinode_process_lib::{get_state, set_state, Address};
-use llm_interface::api::openai::OpenaiApi;
 use serde::{Deserialize, Serialize};
 use serde::Deserializer;
 use serde::Serializer;
@@ -26,7 +25,7 @@ pub struct State {
     pub tg_api: Api,
     pub tg_worker: Address,
     pub wallet: LocalWallet,
-    pub openai_api: OpenaiApi,
+    pub openai_address: Address, 
 }
 
 impl Serialize for State {

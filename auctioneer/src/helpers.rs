@@ -3,17 +3,17 @@ use alloy_signer::LocalWallet;
 use kinode_process_lib::{
     eth, println, Address, 
 };
-use llm_interface::api::openai::spawn_openai_pkg;
 use std::str::FromStr;
 use crate::context::ContextManager;
-use crate::tg_api::init_tg_bot;
+use crate::tg_api::{init_tg_bot, init_openai};
 use crate::State;
 use crate::InitialConfig;
 
 pub fn hydrate_state(our: &Address, config: InitialConfig, context_manager: ContextManager) -> anyhow::Result<State> {
-    let Ok(openai_api) = spawn_openai_pkg(our.clone(), &config.openai_key) else {
-        return Err(anyhow::anyhow!("openAI couldn't boot."));
+    let Ok(openai_address) = init_openai(our.clone(), &config.openai_key) else {
+        return Err(anyhow::anyhow!("openai api couldn't boot."));
     };
+
     let Ok((tg_api, tg_worker)) =
         init_tg_bot(our.clone(), &config.telegram_bot_api_key, None)
     else {
@@ -26,7 +26,7 @@ pub fn hydrate_state(our: &Address, config: InitialConfig, context_manager: Cont
 
     // subscribe to updates...
     let escrow_address =
-        EthAddress::from_str("0x4A3A2c0A385F017501544DcD9C6Eb3f6C63fc38b").unwrap();
+        EthAddress::from_str("0x4A3A2c0A385F017501544DcD9C6Eb3f6C63fc38b").unwrap().into();
 
     let mut seller_topic_bytes = [0u8; 32];
     seller_topic_bytes[12..].copy_from_slice(&wallet.address().to_vec());
@@ -66,6 +66,6 @@ pub fn hydrate_state(our: &Address, config: InitialConfig, context_manager: Cont
         tg_api,
         tg_worker,
         wallet,
-        openai_api,
+        openai_address,
     })
 }

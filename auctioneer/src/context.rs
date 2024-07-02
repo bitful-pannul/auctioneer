@@ -1,14 +1,14 @@
-use llm_interface::openai::ChatParams;
-use llm_interface::openai::Message;
-use llm_interface::api::openai::OpenaiApi;
+use crate::structs::*;
 use crate::AddNFTArgs;
 use alloy_primitives::{
     utils::{format_ether, parse_units},
     U256,
 };
+use llm_interface::openai::{LLMRequest, LLMResponse, Message, MessageBuilder, ChatRequestBuilder};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
-use crate::structs::*;
+
+use kinode_process_lib::{Request, Address};
 
 /// The maximum number of messages to keep in the chat history buffer
 const BUFFER_CAPACITY: usize = 4;
@@ -22,7 +22,6 @@ const SOLD_PASSKEY: &str = "SOLD <name_of_item> for <amount> ETH!";
 type ChatId = i64;
 /// Map of chat ids to chat contexts
 type Contexts = HashMap<ChatId, Context>;
-
 
 /// Represents a chat context for a single user chat
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -110,10 +109,10 @@ impl ContextManager {
         &mut self,
         chat_id: ChatId,
         text: &str,
-        openai_api: &OpenaiApi,
+        openai_address: &Address,
     ) -> anyhow::Result<String> {
         let context = self.chat_context(chat_id);
-        let message = context.chat(openai_api, text)?;
+        let message = context.chat(text, openai_address)?;
         Ok(message.content)
     }
 
@@ -196,16 +195,35 @@ impl ContextManager {
 
 impl Context {
     /// Processes a user's chat message, updates the chat history, and generates a response using openai API.
-    pub fn chat(&mut self, openai_api: &OpenaiApi, text: &str) -> anyhow::Result<Message> {
+    pub fn chat(&mut self, text: &str, openai_address: &Address) -> anyhow::Result<Message> {
         self.chat_history.push(Message {
             role: "user".into(),
             content: text.into(),
         });
 
-        let chat_params = create_chat_params(self.create_message_context());
-        let answer = openai_api.chat(chat_params)?;
+        let answer = Self::get_openai_answer(text, openai_address)?;
         self.chat_history.push(answer.clone());
         Ok(answer)
+    }
+
+    // TODO: Zena: Not llama, but gpt4 turbo
+    fn get_openai_answer(text: &str, openai_address: &Address) -> anyhow::Result<Message> {
+        let request = ChatRequestBuilder::default()
+            .model("llama3-8b-8192".to_string())
+            .messages(vec![MessageBuilder::default()
+                .role("user".to_string())
+                .content(text.to_string())
+                .build()?])
+            .build()?;
+        let request = serde_json::to_vec(&LLMRequest::GroqChat(request))?;
+        let response = Request::to(openai_address)
+            .body(request)
+            .send_and_await_response(30)??;
+        let LLMResponse::Chat(chat) = serde_json::from_slice(response.body())? else {
+            println!("chatbot: failed to parse LLM response");
+            return Err(anyhow::anyhow!("Failed to parse LLM response"));
+        };
+        Ok(chat.choices[0].message.clone())
     }
 
     /// Processes the chatbot's response to identify any tentative offers or link buyer addresses.
@@ -400,18 +418,4 @@ impl<T> Buffer<T> {
         }
         self.buffer.push_back(item);
     }
-}
-
-/// The params to communicate with the LLM process.
-/// Max tokens is kept low to save money.
-/// Temperature is set to 0.2 to make the LLM rather predictable.
-fn create_chat_params(messages: Vec<Message>) -> ChatParams {
-    let chat_params = ChatParams {
-        model: "gpt-4-1106-preview".into(),
-        messages,
-        max_tokens: Some(150),
-        temperature: Some(0.2),
-        ..Default::default()
-    };
-    chat_params
 }
