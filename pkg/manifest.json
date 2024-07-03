@@ -3,7 +3,7 @@
         "process_name": "main",
         "process_wasm_path": "/auctioneer.wasm",
         "on_exit": "Restart",
-        "request_networking": false,
+        "request_networking": true,
         "request_capabilities": [
             "http_server:distro:sys",
             "http_client:distro:sys",
@@ -13,7 +13,46 @@
             "terminal:terminal:sys",
             "homepage:homepage:sys"
         ],
-        "grant_capabilities": [],
+        "grant_capabilities": [
+            "http_server:distro:sys",
+            "http_client:distro:sys"
+        ],
+        "public": true
+    },
+    {
+        "process_name": "tg",
+        "process_wasm_path": "/tg.wasm",
+        "on_exit": "Restart",
+        "request_networking": true,
+        "request_capabilities": [
+            "http_server:distro:sys",
+            "http_client:distro:sys",
+            "net:distro:sys",
+            "main:barter:appattacc.os",
+            "sqlite:distro:sys"
+        ],
+        "grant_capabilities": [
+            "main:barter:appattacc.os",
+            "http_server:distro:sys",
+            "http_client:distro:sys",
+            "sqlite:distro:sys"
+        ],
+        "public": true
+    },
+    {
+        "process_name": "openai",
+        "process_wasm_path": "/openai.wasm",
+        "on_exit": "None",
+        "request_networking": true,
+        "request_capabilities": [
+            "http_client:distro:sys",
+            "main:barter:appattacc.os"
+        ],
+        "grant_capabilities": [
+            "http_client:distro:sys",
+            "http_server:distro:sys",
+            "main:barter:appattacc.os"
+        ],
         "public": true
     }
 ]

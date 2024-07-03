@@ -1,15 +1,17 @@
 /// API for the bot and the parent process.
-use frankenstein::{GetUpdatesParams, TelegramApi, Update};
+use frankenstein::{GetUpdatesParams, TelegramApi};
 use kinode_process_lib::{
     http::{send_request, send_request_await_response, Method},
-    our_capabilities, spawn, Address, OnExit, ProcessId, Request,
+    our_capabilities, println, spawn, Address, OnExit, ProcessId, Request,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::str::FromStr;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use llm_interface::openai::{LLMRequest, RegisterApiKeyRequest};
+use telegram_interface::*;
+
 
 #[allow(unused)]
 pub fn init_openai(our: Address, api_key: &str) -> anyhow::Result<Address> {
@@ -44,24 +46,6 @@ pub fn init_openai(our: Address, api_key: &str) -> anyhow::Result<Address> {
 
 static BASE_API_URL: &str = "https://api.telegram.org/bot";
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TgInitialize {
-    pub token: String,
-    pub params: Option<GetUpdatesParams>,
-}
-
-/// Enum Request received by parent process for long-polling updates.
-#[derive(Debug, Serialize, Deserialize)]
-pub enum TgResponse {
-    Update(TgUpdate),
-    Error(String),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TgUpdate {
-    pub updates: Vec<Update>,
-}
-
 /// function to spawn and initialize a tg bot.
 /// call this from your parent process to receive updates!
 #[allow(unused)]
@@ -75,31 +59,41 @@ pub fn init_tg_bot(
     // give spawned process both our caps, and grant http_client messaging.
     let our_caps = our_capabilities();
     let http_client = ProcessId::from_str("http_client:distro:sys").unwrap();
+    let http_server = ProcessId::from_str("http_server:distro:sys").unwrap();
+    let net = ProcessId::from_str("net:distro:sys").unwrap();
+    let sqlite = ProcessId::from_str("sqlite:distro:sys").unwrap();
+    let barter = ProcessId::from_str("main:barter:appattacc.os").unwrap();
 
     let process_id = spawn(
         None,
         &tg_bot_wasm_path,
         OnExit::None,
         our_caps,
-        vec![http_client],
+        vec![http_client, http_server, net, sqlite, barter],
         false,
     )?;
+    println!("Spawned");
+    let worker_address = Address {
+        node: our.node.clone(),
+        process: process_id.clone(),
+    };
 
     let api = Api::new(token, our.clone());
     let init = TgInitialize {
         token: token.to_string(),
         params,
     };
+    let req = serde_json::to_vec(&TgRequest::RegisterApiKey(init));
+    let response = Request::to(worker_address.clone())
+        .body(req.unwrap())
+        .send_and_await_response(5)??;
 
-    let worker_address = Address {
-        node: our.node.clone(),
-        process: process_id.clone(),
-    };
-
-    let _ = Request::new()
-        .target(worker_address.clone())
-        .body(serde_json::to_vec(&init)?)
-        .send();
+    let response_body = response.body();
+    // Decode the response body as UTF-8 and print it
+    match std::str::from_utf8(response_body) {
+        Ok(decoded) => println!("Response from TG worker: {}", decoded),
+        Err(e) => println!("Failed to decode response as UTF-8: {}", e),
+    }
 
     Ok((api, worker_address))
 }

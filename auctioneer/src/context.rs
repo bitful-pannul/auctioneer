@@ -4,7 +4,7 @@ use alloy_primitives::{
     utils::{format_ether, parse_units},
     U256,
 };
-use llm_interface::openai::{LLMRequest, LLMResponse, Message, MessageBuilder, ChatRequestBuilder};
+use llm_interface::openai::{LLMRequest, LLMResponse, Message, ChatRequestBuilder};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 
@@ -201,18 +201,17 @@ impl Context {
             content: text.into(),
         });
 
-        let answer = Self::get_openai_answer(text, openai_address)?;
+        let messages = self.create_message_context();
+
+        let answer = Self::get_openai_answer(&messages, openai_address)?;
         self.chat_history.push(answer.clone());
         Ok(answer)
     }
 
-    fn get_openai_answer(text: &str, openai_address: &Address) -> anyhow::Result<Message> {
+    fn get_openai_answer(messages: &[Message], openai_address: &Address) -> anyhow::Result<Message> {
         let request = ChatRequestBuilder::default()
             .model("gpt-4-turbo".to_string())
-            .messages(vec![MessageBuilder::default()
-                .role("user".to_string())
-                .content(text.to_string())
-                .build()?])
+            .messages(messages.to_vec())
             .build()?;
         let request = serde_json::to_vec(&LLMRequest::GroqChat(request))?;
         let response = Request::to(openai_address)

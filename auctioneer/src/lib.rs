@@ -10,7 +10,7 @@ use kinode_process_lib::{
 use std::{collections::HashMap, str::FromStr};
 
 mod tg_api;
-use tg_api::TgResponse;
+use telegram_interface::TgResponse;
 
 mod context;
 mod contracts;
@@ -115,6 +115,8 @@ fn list_nfts(state: &mut Option<State>) -> HttpRequestOutcome {
 }
 
 fn handle_internal_messages(message: &Message, state: &mut Option<State>) -> anyhow::Result<()> {
+    println!("handling internal messages");
+    println!("Message is {:?}", message);
     let Some(state) = state else {
         println!("State not found! Returning");
         return Ok(());
