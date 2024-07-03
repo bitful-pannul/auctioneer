@@ -206,10 +206,9 @@ impl Context {
         Ok(answer)
     }
 
-    // TODO: Zena: Not llama, but gpt4 turbo
     fn get_openai_answer(text: &str, openai_address: &Address) -> anyhow::Result<Message> {
         let request = ChatRequestBuilder::default()
-            .model("llama3-8b-8192".to_string())
+            .model("gpt-4-turbo".to_string())
             .messages(vec![MessageBuilder::default()
                 .role("user".to_string())
                 .content(text.to_string())
